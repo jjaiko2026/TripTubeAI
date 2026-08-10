@@ -1,0 +1,120 @@
+"use client";
+
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
+import type { DestinationCost, UsageStatPoint } from "@/lib/types";
+import { formatKRW, formatNumber } from "@/lib/format";
+
+const PALETTE = ["#0d9488", "#6366f1", "#f59e0b", "#e11d48", "#a855f7", "#0891b2"];
+
+export function VisitsChart({ data }: { data: UsageStatPoint[] }) {
+  const chartData = data.slice(-30).map((d) => ({
+    date: d.date.slice(5),
+    방문자: d.visits,
+    일정생성: d.itinerariesGenerated,
+  }));
+
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+        <defs>
+          <linearGradient id="visitsFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={PALETTE[0]} stopOpacity={0.35} />
+            <stop offset="95%" stopColor={PALETTE[0]} stopOpacity={0} />
+          </linearGradient>
+          <linearGradient id="genFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={PALETTE[1]} stopOpacity={0.35} />
+            <stop offset="95%" stopColor={PALETTE[1]} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
+        <XAxis dataKey="date" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+        <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={40} />
+        <Tooltip
+          contentStyle={{
+            fontSize: 12,
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--popover)",
+            color: "var(--popover-foreground)",
+          }}
+        />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Area type="monotone" dataKey="방문자" stroke={PALETTE[0]} fill="url(#visitsFill)" strokeWidth={2} />
+        <Area type="monotone" dataKey="일정생성" stroke={PALETTE[1]} fill="url(#genFill)" strokeWidth={2} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function DestinationCostChart({ data }: { data: DestinationCost[] }) {
+  const chartData = [...data]
+    .sort((a, b) => b.avgCostPerPersonPerNight - a.avgCostPerPersonPerNight)
+    .slice(0, 8)
+    .map((d) => ({ name: d.destination, cost: d.avgCostPerPersonPerNight }));
+
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border" />
+        <XAxis
+          type="number"
+          tickFormatter={(v) => `${Math.round(v / 10000)}만`}
+          tick={{ fontSize: 12 }}
+          tickLine={false}
+          axisLine={false}
+        />
+        <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={56} />
+        <Tooltip
+          formatter={(value) => [formatKRW(Number(value)), "1인 1박 평균"]}
+          contentStyle={{
+            fontSize: 12,
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--popover)",
+            color: "var(--popover-foreground)",
+          }}
+        />
+        <Bar dataKey="cost" radius={[0, 6, 6, 0]} fill={PALETTE[0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function PurposePieChart({ data }: { data: { name: string; value: number }[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={260}>
+      <PieChart>
+        <Pie data={data} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
+          {data.map((entry, index) => (
+            <Cell key={entry.name} fill={PALETTE[index % PALETTE.length]} />
+          ))}
+        </Pie>
+        <Tooltip
+          formatter={(value) => formatNumber(Number(value))}
+          contentStyle={{
+            fontSize: 12,
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "var(--popover)",
+            color: "var(--popover-foreground)",
+          }}
+        />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}
