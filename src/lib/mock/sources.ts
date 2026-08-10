@@ -82,7 +82,3 @@ export function mockSearchBlog(query: string, count = 2): SourceBlog[] {
   }
   return results;
 }
-
-export function pickOneSource(query: string, preferVideo: boolean) {
-  return preferVideo ? mockSearchYoutube(query, 1)[0] : mockSearchBlog(query, 1)[0];
-}

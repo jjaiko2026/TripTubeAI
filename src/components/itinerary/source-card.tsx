@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ExternalLink, Newspaper, SquarePlay } from "lucide-react";
 import type { Source } from "@/lib/types";
 
@@ -25,12 +26,24 @@ export function SourceCard({ source }: { source: Source }) {
         rel="noopener noreferrer"
         className="group flex gap-3 rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40"
       >
-        <div
-          className={`relative flex h-16 w-28 shrink-0 items-center justify-center rounded-md bg-gradient-to-br ${gradientFor(
-            source.id
-          )}`}
-        >
-          <SquarePlay className="h-6 w-6 text-white/90" />
+        <div className="relative flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+          {source.thumbnailUrl ? (
+            <Image
+              src={source.thumbnailUrl}
+              alt=""
+              fill
+              sizes="112px"
+              className="object-cover"
+            />
+          ) : (
+            <div
+              className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${gradientFor(
+                source.id
+              )}`}
+            >
+              <SquarePlay className="h-6 w-6 text-white/90" />
+            </div>
+          )}
           <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
             {source.durationLabel}
           </span>

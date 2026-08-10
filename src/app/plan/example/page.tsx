@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import { unstable_cache } from "next/cache";
 import { SignInButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,17 @@ const EXAMPLE_REQUEST: TripRequest = {
   purposes: ["힐링", "맛집"],
 };
 
+// 비로그인 사용자 누구나 보는 공개 페이지라, 방문할 때마다 실제 유튜브/블로그
+// API를 호출하지 않도록 1시간 단위로 캐시합니다 (API 쿼터 보호).
+const getExampleItinerary = unstable_cache(
+  () => generateItinerary(EXAMPLE_REQUEST),
+  ["plan-example-itinerary"],
+  { revalidate: 3600 }
+);
+
 export default async function PlanExamplePage() {
   const { userId } = await auth();
-  const itinerary = generateItinerary(EXAMPLE_REQUEST);
+  const itinerary = await getExampleItinerary();
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">

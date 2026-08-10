@@ -36,6 +36,7 @@ export interface SourceVideo {
   publishedLabel: string;
   durationLabel: string;
   url: string;
+  thumbnailUrl?: string;
 }
 
 export interface SourceBlog {

@@ -19,10 +19,16 @@ npm run dev
 ## 현재 구현 범위
 
 - **인증**: Clerk (Vercel Marketplace 연동, `src/proxy.ts`, `@clerk/nextjs`). Google 소셜 로그인은 [Clerk Dashboard](https://dashboard.clerk.com)의 Social Connections에서 활성화해야 합니다.
-- **YouTube 영상 검색 / 블로그 검색 / AI 일정 생성**: 아직 실 API 연동 전, `src/lib/mock/` 아래 목업 데이터 레이어로 동작합니다.
-  - `src/lib/mock/destinations.ts` — 여행지별 활동 데이터셋
-  - `src/lib/mock/sources.ts` — 유튜브/블로그 검색 결과를 흉내 낸 목업 (실제 YouTube/네이버 검색 링크로 연결됨)
-  - `src/lib/mock/itinerary.ts` — 조건 기반 일정 생성 로직
+- **YouTube 영상 검색 / 블로그 검색**: 실 API 연동됨 (`src/lib/real/youtube.ts`, `src/lib/real/naver-blog.ts`). 아래 환경변수가 없거나 호출이 실패하면 자동으로 목업 검색 결과로 대체됩니다.
+
+  | 환경변수 | 발급처 |
+  |---|---|
+  | `YOUTUBE_API_KEY` | [Google Cloud Console](https://console.cloud.google.com) → YouTube Data API v3 사용 설정 → API 키 |
+  | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | [네이버 개발자센터](https://developers.naver.com/apps/#/register) → 검색 API |
+
+  `.env.local`에 추가한 뒤 `npm run dev`를 재시작하면 바로 실 데이터로 전환됩니다. 여행 1건당 유튜브 검색 1회 + 네이버 블로그 검색 1회만 호출하고(각 일정 항목은 그 결과를 순환 배정), `/plan/example`과 `/plan/result/[token]`은 1시간 캐시(`unstable_cache`)를 둬서 `search.list`(유닛당 100)의 일일 쿼터를 아낍니다.
+- **AI 일정 생성**: 아직 미연동 — 활동 추천 로직은 `src/lib/mock/destinations.ts`의 큐레이션 데이터 기반입니다.
+  - `src/lib/mock/itinerary.ts` — 조건 기반 일정 생성 로직 (소스 풀 구성 포함)
   - `src/lib/mock/reviews.ts`, `src/lib/mock/stats.ts` — 후기·대시보드 목업 데이터
 - **DB**: 아직 미연동 — 후기/통계는 메모리·세션 내 목업 데이터입니다.
 
@@ -40,6 +46,5 @@ npm run dev
 
 ## 다음 단계 (실연동)
 
-1. YouTube Data API v3, 블로그 검색 API(예: 네이버 검색 API) 연동
-2. Vercel AI Gateway 등을 통한 실제 AI 요약/일정 구성 로직 연동
-3. Postgres(Neon) 등 실 데이터베이스 연동 (일정/후기/통계 영속화)
+1. Vercel AI Gateway 등을 통한 실제 AI 요약/일정 구성 로직 연동
+2. Postgres(Neon) 등 실 데이터베이스 연동 (일정/후기/통계 영속화)
