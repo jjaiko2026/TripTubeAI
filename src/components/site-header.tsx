@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { Plane } from "lucide-react";
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import { getSession } from "@/lib/session";
-import { logoutAction } from "@/lib/actions";
 
 const NAV_LINKS = [
   { href: "/", label: "홈" },
@@ -11,9 +10,7 @@ const NAV_LINKS = [
   { href: "/reviews", label: "후기" },
 ];
 
-export async function SiteHeader() {
-  const session = await getSession();
-
+export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -33,32 +30,19 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          {session ? (
-            <>
-              <span className="hidden text-sm text-muted-foreground sm:inline">
-                {session.name}님
-              </span>
-              <form action={logoutAction}>
-                <Button variant="outline" size="sm" type="submit">
-                  로그아웃
-                </Button>
-              </form>
-            </>
-          ) : (
-            <>
-              <Button
-                render={<Link href="/login" />}
-                variant="ghost"
-                size="sm"
-                className="hidden sm:inline-flex"
-              >
+          <Show when="signed-in">
+            <UserButton />
+          </Show>
+          <Show when="signed-out">
+            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+              <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
                 로그인
               </Button>
-              <Button render={<Link href="/plan/new" />} size="sm">
-                일정 만들기
-              </Button>
-            </>
-          )}
+            </SignInButton>
+            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+              <Button size="sm">일정 만들기</Button>
+            </SignInButton>
+          </Show>
         </div>
       </div>
     </header>

@@ -17,7 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ReviewCard } from "@/components/reviews/review-card";
 import { HeroVideoBackground } from "@/components/hero-video-background";
-import { getSession } from "@/lib/session";
+import { Show, SignInButton } from "@clerk/nextjs";
 import { REVIEWS } from "@/lib/mock/reviews";
 import { DESTINATION_COSTS, generateUsageStats, totalUsage } from "@/lib/mock/stats";
 import { getHotDestinationVideo } from "@/lib/mock/hero";
@@ -48,9 +48,7 @@ const STEPS = [
   { icon: Link2, title: "출처까지 확인", desc: "참고한 영상·블로그 링크를 그대로 확인해요" },
 ];
 
-export default async function Home() {
-  const session = await getSession();
-  const primaryHref = session ? "/plan/new" : "/login?next=/plan/new";
+export default function Home() {
   const usage = generateUsageStats(30);
   const totals = totalUsage(usage);
   const topCosts = [...DESTINATION_COSTS].sort((a, b) => b.popularity - a.popularity).slice(0, 4);
@@ -75,9 +73,18 @@ export default async function Home() {
             일정을 만들어 드려요.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <Button render={<Link href={primaryHref} />} size="lg">
-              <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
-            </Button>
+            <Show when="signed-in">
+              <Button render={<Link href="/plan/new" />} size="lg">
+                <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
+              </Button>
+            </Show>
+            <Show when="signed-out">
+              <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+                <Button size="lg">
+                  <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
+                </Button>
+              </SignInButton>
+            </Show>
             <Button
               render={<Link href="/plan/example" />}
               size="lg"
@@ -274,9 +281,18 @@ export default async function Home() {
             <p className="max-w-md text-primary-foreground/80">
               로그인하고 여행지·인원·기간·목적만 입력하면 AI가 나머지를 정리해 드려요.
             </p>
-            <Button render={<Link href={primaryHref} />} size="lg" variant="secondary">
-              <Sparkles className="h-4 w-4" /> 지금 시작하기
-            </Button>
+            <Show when="signed-in">
+              <Button render={<Link href="/plan/new" />} size="lg" variant="secondary">
+                <Sparkles className="h-4 w-4" /> 지금 시작하기
+              </Button>
+            </Show>
+            <Show when="signed-out">
+              <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+                <Button size="lg" variant="secondary">
+                  <Sparkles className="h-4 w-4" /> 지금 시작하기
+                </Button>
+              </SignInButton>
+            </Show>
           </CardContent>
         </Card>
       </section>

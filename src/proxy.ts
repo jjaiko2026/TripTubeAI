@@ -1,17 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/session";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 
-export function proxy(request: NextRequest) {
-  const hasSession = request.cookies.has(SESSION_COOKIE);
-  if (!hasSession) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/plan/example";
-    url.searchParams.set("login", "required");
-    return NextResponse.redirect(url);
-  }
-  return NextResponse.next();
-}
+export default clerkMiddleware();
 
 export const config = {
-  matcher: ["/plan/new"],
+  matcher: [
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+  ],
 };

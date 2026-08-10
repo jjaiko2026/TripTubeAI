@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { auth } from "@clerk/nextjs/server";
 
 export default async function PlanIndexPage() {
-  const session = await getSession();
-  redirect(session ? "/plan/new" : "/plan/example");
+  const { userId } = await auth();
+  redirect(userId ? "/plan/new" : "/plan/example");
 }

@@ -1,6 +1,13 @@
+import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import { TripForm } from "@/components/plan/trip-form";
 
-export default function PlanNewPage() {
+export default async function PlanNewPage() {
+  const { userId } = await auth();
+  if (!userId) {
+    redirect("/plan/example?login=required");
+  }
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
       <div className="mb-8 text-center">

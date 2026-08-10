@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { Sparkles } from "lucide-react";
+import { SignInButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { generateItinerary } from "@/lib/mock/itinerary";
-import { getSession } from "@/lib/session";
 import type { TripRequest } from "@/lib/types";
 
 const EXAMPLE_REQUEST: TripRequest = {
@@ -16,12 +16,12 @@ const EXAMPLE_REQUEST: TripRequest = {
 };
 
 export default async function PlanExamplePage() {
-  const session = await getSession();
+  const { userId } = await auth();
   const itinerary = generateItinerary(EXAMPLE_REQUEST);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      {!session && (
+      {!userId && (
         <div className="mb-8 flex flex-col items-center gap-3 rounded-xl border bg-accent/40 px-6 py-6 text-center">
           <Sparkles className="h-6 w-6 text-primary" />
           <p className="font-medium">
@@ -30,7 +30,9 @@ export default async function PlanExamplePage() {
           <p className="text-sm text-muted-foreground">
             로그인하면 원하는 여행지·기간·목적에 맞춘 나만의 일정을 직접 만들 수 있어요.
           </p>
-          <Button render={<Link href="/login?next=/plan/new" />}>로그인하고 내 일정 만들기</Button>
+          <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+            <Button>로그인하고 내 일정 만들기</Button>
+          </SignInButton>
         </div>
       )}
 
