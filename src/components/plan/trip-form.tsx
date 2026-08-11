@@ -16,7 +16,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { createItineraryAction } from "@/lib/actions";
 import { ALL_MEMBER_TYPES, ALL_PURPOSES } from "@/lib/types";
-import { POPULAR_DESTINATION_NAMES } from "@/lib/mock/itinerary";
+import { POPULAR_DESTINATION_NAMES } from "@/lib/itinerary";
 import { monthLabel } from "@/lib/format";
 
 export function TripForm() {

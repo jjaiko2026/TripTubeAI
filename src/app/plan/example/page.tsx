@@ -4,7 +4,7 @@ import { SignInButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
-import { generateItinerary } from "@/lib/mock/itinerary";
+import { generateItinerary } from "@/lib/itinerary";
 import type { TripRequest } from "@/lib/types";
 
 const EXAMPLE_REQUEST: TripRequest = {

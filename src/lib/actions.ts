@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
-import { generateItinerary } from "@/lib/mock/itinerary";
+import { generateItinerary } from "@/lib/itinerary";
 import { createReview, saveItinerary } from "@/db/queries";
 import type { MemberType, Purpose, TripRequest } from "@/lib/types";
 
