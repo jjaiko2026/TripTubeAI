@@ -1,7 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { ItineraryLoading } from "@/components/plan/itinerary-loading";
 import { createItineraryAction } from "@/lib/actions";
 import { ALL_MEMBER_TYPES, ALL_PURPOSES } from "@/lib/types";
 import { POPULAR_DESTINATION_NAMES } from "@/lib/itinerary";
@@ -21,12 +22,26 @@ import { monthLabel } from "@/lib/format";
 
 export function TripForm() {
   const [isPending, startTransition] = useTransition();
+  const [pendingDestination, setPendingDestination] = useState("");
+
+  if (isPending) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <ItineraryLoading destination={pendingDestination} />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardContent className="pt-6">
         <form
-          action={(formData) => startTransition(() => createItineraryAction(formData))}
+          action={(formData) => {
+            setPendingDestination(String(formData.get("destination") ?? "").trim());
+            startTransition(() => createItineraryAction(formData));
+          }}
           className="space-y-6"
         >
           <div className="space-y-2">
@@ -105,16 +120,8 @@ export function TripForm() {
             </div>
           </div>
 
-          <Button type="submit" className="w-full" size="lg" disabled={isPending}>
-            {isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> AI가 유튜브·블로그를 분석 중이에요...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" /> AI 여행 일정 만들기
-              </>
-            )}
+          <Button type="submit" className="w-full" size="lg">
+            <Sparkles className="h-4 w-4" /> AI 여행 일정 만들기
           </Button>
         </form>
       </CardContent>

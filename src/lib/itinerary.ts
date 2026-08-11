@@ -14,6 +14,7 @@ import { mockSearchBlog, mockSearchYoutube } from "@/lib/mock/sources";
 import { fetchYoutubeVideos } from "@/lib/real/youtube";
 import { fetchNaverBlogs } from "@/lib/real/naver-blog";
 import { geocodeGoogle, geocodeNaverPlace } from "@/lib/real/geocode";
+import { reorderDayItemsByGeography } from "@/lib/geo-order";
 
 const AI_MODEL = "anthropic/claude-sonnet-5";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
@@ -240,12 +241,14 @@ async function attachSourcesAndLocations(destination: DestinationProfile, plan: 
   return plan.map((d) => ({
     day: d.day,
     label: d.label,
-    items: d.items.map(
-      (it): ItineraryItem => ({
-        ...it,
-        sources: sourcesByTitle.get(it.title)!,
-        location: locationByTitle.get(it.title) ?? null,
-      })
+    items: reorderDayItemsByGeography(
+      d.items.map(
+        (it): ItineraryItem => ({
+          ...it,
+          sources: sourcesByTitle.get(it.title)!,
+          location: locationByTitle.get(it.title) ?? null,
+        })
+      )
     ),
   }));
 }

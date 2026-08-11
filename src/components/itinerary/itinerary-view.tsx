@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SourceCard, SourceReferenceLink } from "@/components/itinerary/source-card";
+import { ItineraryItemCard } from "@/components/itinerary/itinerary-item-card";
 import { ItineraryMap } from "@/components/itinerary/itinerary-map";
 import { formatKRW, monthLabel } from "@/lib/format";
 import { colorForDay } from "@/lib/day-colors";
@@ -56,56 +56,34 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
       </Card>
 
       <div className="space-y-6">
-        {itinerary.days.map((day) => (
-          <Card key={day.day}>
-            <CardHeader
-              className="-mt-(--card-spacing) rounded-t-xl pt-(--card-spacing)"
-              style={{ backgroundColor: `${colorForDay(day.day)}4D` }}
-            >
-              <CardTitle className="flex items-center gap-2 text-base">
-                <span
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white"
-                  style={{ backgroundColor: colorForDay(day.day) }}
-                >
-                  {day.day}
-                </span>
-                {day.label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {day.items.map((item, idx) => (
-                <div key={idx} className="grid gap-3 sm:grid-cols-[64px_1fr] sm:gap-4">
-                  <div className="text-sm font-medium text-muted-foreground sm:pt-1">{item.time}</div>
-                  <div className="min-w-0 space-y-2 border-l pl-4 sm:border-l sm:pl-4">
-                    <div>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {item.tags.map((tag) => (
-                          <Badge key={tag} variant="outline" className="text-[11px]">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    {item.sources.length > 0 && (
-                      <div className="space-y-1.5">
-                        <SourceCard source={item.sources[0]} />
-                        {item.sources.length > 1 && (
-                          <div className="space-y-1 pl-1">
-                            {item.sources.slice(1).map((source) => (
-                              <SourceReferenceLink key={source.id} source={source} />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        ))}
+        {itinerary.days.map((day) => {
+          const dayColor = colorForDay(day.day);
+          let locatedCount = 0;
+
+          return (
+            <Card key={day.day} style={{ backgroundColor: `${dayColor}26` }}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <span
+                    className="rounded-full px-2.5 py-1 text-xs font-bold text-white"
+                    style={{ backgroundColor: dayColor }}
+                  >
+                    {day.day}일차
+                  </span>
+                  {day.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {day.items.map((item, idx) => {
+                  const indexInDay = item.location ? ++locatedCount : null;
+                  return (
+                    <ItineraryItemCard key={idx} item={item} color={dayColor} indexInDay={indexInDay} />
+                  );
+                })}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
