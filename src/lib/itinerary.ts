@@ -83,7 +83,7 @@ async function generateItineraryWithAI(
       "쓰이므로, 검색 가능한 구체적인 장소/활동명으로 작성하세요 (예: '메콩강 보트 투어').",
     prompt: JSON.stringify({
       destination: destination.name,
-      region: destination.region,
+      region: request.region,
       days,
       request: {
         memberType: request.memberType,
@@ -265,7 +265,11 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
     plan = generateItineraryFallback(request, destination, days);
   }
 
-  const itineraryDays = await attachSourcesAndLocations(destination, plan);
+  // 지오코딩(네이버/구글)과 지도 SDK 선택은 destination 프로필의 추정치가 아니라 사용자가
+  // 폼/챗봇에서 직접 확정한 request.region을 그대로 따릅니다.
+  const resolvedDestination: DestinationProfile = { ...destination, region: request.region };
+
+  const itineraryDays = await attachSourcesAndLocations(resolvedDestination, plan);
 
   const estimatedTotalCost =
     destination.avgCostPerPersonPerNight * Math.max(1, request.nights) * Math.max(1, request.memberCount);
@@ -273,7 +277,7 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   return {
     request,
     destinationName: destination.name,
-    region: destination.region,
+    region: request.region,
     days: itineraryDays,
     estimatedTotalCost,
     currency: "KRW",

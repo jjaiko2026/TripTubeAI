@@ -5,12 +5,13 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { generateItinerary } from "@/lib/itinerary";
 import { createReview, saveItinerary } from "@/db/queries";
-import type { MemberType, Purpose, TripRequest } from "@/lib/types";
+import type { MemberType, Purpose, Region, TripRequest } from "@/lib/types";
 
 export async function createItineraryAction(formData: FormData) {
   const { userId } = await auth();
 
   const destination = String(formData.get("destination") ?? "").trim();
+  const region = (String(formData.get("region") ?? "국내") === "해외" ? "해외" : "국내") as Region;
   const memberType = String(formData.get("memberType") ?? "혼자") as MemberType;
   const memberCount = Math.max(1, Number(formData.get("memberCount") ?? 1));
   const nights = Math.max(0, Number(formData.get("nights") ?? 2));
@@ -21,7 +22,7 @@ export async function createItineraryAction(formData: FormData) {
     redirect("/plan/new?error=destination");
   }
 
-  const request: TripRequest = { destination, memberType, memberCount, nights, month, purposes };
+  const request: TripRequest = { destination, region, memberType, memberCount, nights, month, purposes };
   const itinerary = await generateItinerary(request);
   const id = await saveItinerary(itinerary, userId ?? null);
   redirect(`/plan/result/${id}`);

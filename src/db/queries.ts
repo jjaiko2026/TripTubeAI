@@ -74,6 +74,7 @@ export async function getItinerary(id: string): Promise<Itinerary | null> {
   return {
     request: {
       destination: row.destination,
+      region: row.region as Itinerary["region"],
       memberType: row.memberType as Itinerary["request"]["memberType"],
       memberCount: row.memberCount,
       nights: row.nights,

@@ -206,6 +206,8 @@ export function genericDestination(name: string): DestinationProfile {
     id: "generic",
     name,
     aliases: [name],
+    // 이 값은 활동 카탈로그 생성용일 뿐, 지오코딩/지도 선택에는 쓰이지 않습니다
+    // (사용자가 폼에서 직접 고른 TripRequest.region이 유일한 진실 소스입니다).
     region: "국내",
     emoji: "🧳",
     avgCostPerPersonPerNight: 160000,
@@ -221,3 +223,37 @@ export function genericDestination(name: string): DestinationProfile {
 }
 
 export const TIME_SLOTS_DEFAULT = TIME_SLOTS;
+
+export interface AmbiguousDestinationOption {
+  label: string;
+  value: string;
+}
+
+/** 이름만으로는 어느 지역인지 특정할 수 없는 국내 지명. 사용자가 폼/챗봇에서 명확히 고르도록 안내하는 데 씁니다. */
+export const AMBIGUOUS_DESTINATIONS: Record<string, AmbiguousDestinationOption[]> = {
+  "광주": [
+    { label: "광주광역시 (전라도)", value: "광주광역시" },
+    { label: "경기 광주시", value: "경기 광주시" },
+  ],
+  "고성": [
+    { label: "강원 고성군", value: "강원 고성군" },
+    { label: "경남 고성군", value: "경남 고성군" },
+  ],
+};
+
+/**
+ * 입력된 목적지 텍스트가 애매한 지명(아직 원래 이름 그대로)이거나 이미 그 지명의 특정
+ * 후보로 확정된 상태면, 두 경우 모두 같은 그룹을 반환합니다. 확정 후에도 계속 다른
+ * 후보로 바꿀 수 있게 하려는 목적입니다.
+ */
+export function findAmbiguousGroup(
+  destinationText: string
+): { key: string; options: AmbiguousDestinationOption[] } | undefined {
+  const trimmed = destinationText.trim();
+  for (const [key, options] of Object.entries(AMBIGUOUS_DESTINATIONS)) {
+    if (trimmed === key || options.some((o) => o.value === trimmed)) {
+      return { key, options };
+    }
+  }
+  return undefined;
+}

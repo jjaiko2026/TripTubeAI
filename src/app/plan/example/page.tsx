@@ -9,6 +9,7 @@ import type { TripRequest } from "@/lib/types";
 
 const EXAMPLE_REQUEST: TripRequest = {
   destination: "제주도",
+  region: "국내",
   memberType: "연인",
   memberCount: 2,
   nights: 3,
@@ -22,7 +23,7 @@ const EXAMPLE_REQUEST: TripRequest = {
 // 배포에서 캐시된 옛 모양의 데이터를 그대로 읽지 않도록 합니다.
 const getExampleItinerary = unstable_cache(
   () => generateItinerary(EXAMPLE_REQUEST),
-  ["plan-example-itinerary-v5"],
+  ["plan-example-itinerary-v6"],
   { revalidate: 3600 }
 );
 

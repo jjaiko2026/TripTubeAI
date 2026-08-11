@@ -20,6 +20,7 @@ export const ALL_MEMBER_TYPES: MemberType[] = [
 
 export interface TripRequest {
   destination: string;
+  region: Region;
   memberType: MemberType;
   memberCount: number;
   nights: number;
