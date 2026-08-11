@@ -79,3 +79,57 @@ export async function createReview(review: {
   const db = getDb();
   await db.insert(reviews).values(review);
 }
+
+export interface DashboardData {
+  totalItineraries: number;
+  dailyGenerated: { date: string; count: number }[];
+  topDestinations: { destination: string; count: number }[];
+  purposeDistribution: { name: string; value: number }[];
+}
+
+/** 대시보드용 실제 집계. 표본이 아직 작은 초기 단계라 DB에서 집계 없이 통째로 읽어 JS에서 계산합니다. */
+export async function getDashboardData(days = 30): Promise<DashboardData> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      destinationName: itineraries.destinationName,
+      purposes: itineraries.purposes,
+      createdAt: itineraries.createdAt,
+    })
+    .from(itineraries);
+
+  // row.createdAt.toISOString()의 날짜(UTC 기준)와 맞춰야 하므로, 버킷 날짜도
+  // 서버 로컬 타임존이 아닌 UTC 자정 기준으로 계산합니다.
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const byDay = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(todayUTC - i * 86_400_000);
+    byDay.set(d.toISOString().slice(0, 10), 0);
+  }
+
+  const destinationCounts = new Map<string, number>();
+  const purposeCounts = new Map<string, number>();
+
+  for (const row of rows) {
+    const dayKey = row.createdAt.toISOString().slice(0, 10);
+    if (byDay.has(dayKey)) byDay.set(dayKey, (byDay.get(dayKey) ?? 0) + 1);
+
+    destinationCounts.set(row.destinationName, (destinationCounts.get(row.destinationName) ?? 0) + 1);
+
+    for (const purpose of row.purposes as string[]) {
+      purposeCounts.set(purpose, (purposeCounts.get(purpose) ?? 0) + 1);
+    }
+  }
+
+  return {
+    totalItineraries: rows.length,
+    dailyGenerated: Array.from(byDay.entries()).map(([date, count]) => ({ date, count })),
+    topDestinations: Array.from(destinationCounts.entries())
+      .map(([destination, count]) => ({ destination, count }))
+      .sort((a, b) => b.count - a.count),
+    purposeDistribution: Array.from(purposeCounts.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value),
+  };
+}

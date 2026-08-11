@@ -37,14 +37,6 @@ export function generateUsageStats(daysBack = 30): UsageStatPoint[] {
   return points;
 }
 
-export const PURPOSE_DISTRIBUTION = [
-  { name: "맛집", value: 32 },
-  { name: "힐링", value: 27 },
-  { name: "액티비티", value: 19 },
-  { name: "문화·역사", value: 14 },
-  { name: "쇼핑", value: 8 },
-];
-
 export function totalUsage(points: UsageStatPoint[]) {
   return points.reduce(
     (acc, p) => ({
