@@ -8,7 +8,7 @@ import {
 } from "@/components/dashboard/dashboard-charts";
 import { DESTINATION_COSTS, generateUsageStats, totalUsage } from "@/lib/mock/stats";
 import { getDashboardData } from "@/db/queries";
-import { formatKRW, formatNumber } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 
 export default async function DashboardPage() {
   const dashboard = await getDashboardData(30);

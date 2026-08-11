@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import type { Itinerary, ItineraryDay, ItineraryItem, Purpose, Source, TripRequest } from "@/lib/types";
+import type { GeoLocation, Itinerary, ItineraryDay, ItineraryItem, Purpose, Source, TripRequest } from "@/lib/types";
 import { ALL_PURPOSES } from "@/lib/types";
 import {
   DESTINATIONS,
@@ -13,6 +13,7 @@ import { mulberry32, hashSeed, seededShuffle } from "@/lib/mock/rng";
 import { mockSearchBlog, mockSearchYoutube } from "@/lib/mock/sources";
 import { fetchYoutubeVideos } from "@/lib/real/youtube";
 import { fetchNaverBlogs } from "@/lib/real/naver-blog";
+import { geocodeGoogle, geocodeNaverPlace } from "@/lib/real/geocode";
 
 const AI_MODEL = "anthropic/claude-sonnet-5";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
@@ -144,45 +145,78 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
   return planDays;
 }
 
-/** 실제 유튜브/네이버 검색 결과 중 항목과 가장 관련 있어 보이는 하나를 고릅니다. */
-async function fetchBestSource(query: string): Promise<Source> {
-  const [videos, blogs] = await Promise.all([fetchYoutubeVideos(query, 3), fetchNaverBlogs(query, 3)]);
-  const preferVideo = hashSeed(query) % 2 === 0;
+const SOURCES_PER_ITEM = 3;
 
-  if (preferVideo && videos.length > 0) return videos[0];
-  if (blogs.length > 0) return blogs[0];
-  if (videos.length > 0) return videos[0];
-
-  return mockBestSource(query);
+function interleave(a: Source[], b: Source[]): Source[] {
+  const out: Source[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i]) out.push(a[i]);
+    if (b[i]) out.push(b[i]);
+  }
+  return out;
 }
 
-/** 실제 API 키가 없거나 검색 상한을 넘겼을 때 쓰는, 제목 기반 목업 대체 */
-function mockBestSource(query: string): Source {
+/** 실제 유튜브/네이버 검색 결과 중 항목과 관련 있어 보이는 것들을 최대 3개 고릅니다. */
+async function fetchBestSources(query: string): Promise<Source[]> {
+  const [videos, blogs] = await Promise.all([fetchYoutubeVideos(query, 3), fetchNaverBlogs(query, 3)]);
   const preferVideo = hashSeed(query) % 2 === 0;
-  return preferVideo ? mockSearchYoutube(query, 1)[0] : mockSearchBlog(query, 1)[0];
+  const ordered = preferVideo ? interleave(videos, blogs) : interleave(blogs, videos);
+
+  if (ordered.length >= SOURCES_PER_ITEM) return ordered.slice(0, SOURCES_PER_ITEM);
+  return [...ordered, ...mockBestSources(query, SOURCES_PER_ITEM - ordered.length)];
+}
+
+/** 실제 API 키가 없거나 검색 상한을 넘겼을 때, 혹은 실검색 결과가 부족할 때 채우는 목업 대체 */
+function mockBestSources(query: string, count: number): Source[] {
+  const preferVideo = hashSeed(query) % 2 === 0;
+  const videos = mockSearchYoutube(query, Math.ceil(count / 2));
+  const blogs = mockSearchBlog(query, Math.floor(count / 2) || 1);
+  const merged = preferVideo ? interleave(videos, blogs) : interleave(blogs, videos);
+  return merged.slice(0, count);
+}
+
+/** 목적지가 국내인지 해외인지에 따라 네이버 지역검색/구글 Geocoding 중 하나로 좌표를 조회합니다. */
+async function geocodeItem(destination: DestinationProfile, title: string): Promise<GeoLocation | null> {
+  return destination.region === "국내"
+    ? geocodeNaverPlace(destination.name, title)
+    : geocodeGoogle(`${destination.name} ${title}`);
 }
 
 /**
  * 일정 항목 제목마다(같은 제목은 한 번만) 실제로 검색해 가장 관련 있는 유튜브 영상/
- * 블로그 글을 붙입니다. '메콩강 보트 투어' 같은 구체적인 활동명이 그대로 검색어가
- * 되므로, 전체 여행에 대한 일반 검색 결과가 아니라 그 활동에 맞는 출처가 달립니다.
+ * 블로그 글을 최대 3개까지, 그리고 지도에 표시할 좌표를 붙입니다. '메콩강 보트 투어'
+ * 같은 구체적인 활동명이 그대로 검색어가 되므로, 전체 여행에 대한 일반 검색 결과가
+ * 아니라 그 활동에 맞는 출처/위치가 달립니다.
  */
-async function attachSources(destinationName: string, plan: PlanDay[]): Promise<ItineraryDay[]> {
+async function attachSourcesAndLocations(destination: DestinationProfile, plan: PlanDay[]): Promise<ItineraryDay[]> {
   const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
 
-  const sourceByTitle = new Map<string, Source>();
+  const sourcesByTitle = new Map<string, Source[]>();
+  const locationByTitle = new Map<string, GeoLocation | null>();
+
   await Promise.all(
     uniqueTitles.map(async (title, i) => {
-      const query = `${destinationName} ${title}`;
-      const source = i < MAX_REAL_SOURCE_LOOKUPS ? await fetchBestSource(query) : mockBestSource(query);
-      sourceByTitle.set(title, source);
+      const query = `${destination.name} ${title}`;
+      const withinCap = i < MAX_REAL_SOURCE_LOOKUPS;
+      const [sources, location] = await Promise.all([
+        withinCap ? fetchBestSources(query) : Promise.resolve(mockBestSources(query, SOURCES_PER_ITEM)),
+        withinCap ? geocodeItem(destination, title) : Promise.resolve(null),
+      ]);
+      sourcesByTitle.set(title, sources);
+      locationByTitle.set(title, location);
     })
   );
 
   return plan.map((d) => ({
     day: d.day,
     label: d.label,
-    items: d.items.map((it): ItineraryItem => ({ ...it, source: sourceByTitle.get(it.title)! })),
+    items: d.items.map(
+      (it): ItineraryItem => ({
+        ...it,
+        sources: sourcesByTitle.get(it.title)!,
+        location: locationByTitle.get(it.title) ?? null,
+      })
+    ),
   }));
 }
 
@@ -198,7 +232,7 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
     plan = generateItineraryFallback(request, destination, days);
   }
 
-  const itineraryDays = await attachSources(destination.name, plan);
+  const itineraryDays = await attachSourcesAndLocations(destination, plan);
 
   const estimatedTotalCost =
     destination.avgCostPerPersonPerNight * Math.max(1, request.nights) * Math.max(1, request.memberCount);
@@ -206,6 +240,7 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   return {
     request,
     destinationName: destination.name,
+    region: destination.region,
     days: itineraryDays,
     estimatedTotalCost,
     currency: "KRW",

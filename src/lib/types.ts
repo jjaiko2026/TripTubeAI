@@ -51,12 +51,18 @@ export interface SourceBlog {
 
 export type Source = SourceVideo | SourceBlog;
 
+export interface GeoLocation {
+  lat: number;
+  lng: number;
+}
+
 export interface ItineraryItem {
   time: string;
   title: string;
   description: string;
   tags: Purpose[];
-  source: Source;
+  sources: Source[];
+  location: GeoLocation | null;
 }
 
 export interface ItineraryDay {
@@ -65,9 +71,12 @@ export interface ItineraryDay {
   items: ItineraryItem[];
 }
 
+export type Region = "국내" | "해외";
+
 export interface Itinerary {
   request: TripRequest;
   destinationName: string;
+  region: Region;
   days: ItineraryDay[];
   estimatedTotalCost: number;
   currency: "KRW";

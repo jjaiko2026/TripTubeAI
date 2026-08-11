@@ -40,23 +40,34 @@ TripTube AI는 유튜브 영상과 네이버 블로그 글을 뒤져가며 여�
 - 예상 총 비용은 AI가 아닌 목적지별 평균 비용 데이터로 계산 (환각 방지)
 
 ### 4.3 실제 출처 매칭 (유튜브 · 네이버 블로그)
-- 일정 항목마다(제목이 같으면 캐시 재사용) `"{목적지} {항목 제목}"`으로 실제 검색을 수행해, 그 활동과 실제로 관련 있는 영상/블로그를 붙인다 (여행 전체에 대한 뭉뚱그린 검색이 아님)
-- **YouTube Data API v3**: 최근 1년 이내 영상만, 검색당 1회 호출로 유닛 비용 관리
+- 일정 항목마다(제목이 같으면 캐시 재사용) `"{목적지} {항목 제목}"`으로 실제 검색을 수행해, 그 활동과 실제로 관련 있는 영상/블로그를 최대 3개까지 붙인다 (여행 전체에 대한 뭉뚱그린 검색이 아님)
+- **YouTube Data API v3**: 최근 1년 이내 영상만
 - **NAVER API HUB 블로그 검색**: `naverapihub.apigw.ntruss.com/search/v1/blog`, `X-NCP-APIGW-API-KEY(-ID)` 인증 (구 `openapi.naver.com` 방식에서 마이그레이션)
-- 여행 1건당 실제 검색은 최대 8개 고유 항목까지만 수행(쿼터 보호), 그 이상이거나 API 키가 없거나 결과가 없으면 항목 제목 기반 목업 검색으로 자연스럽게 대체
+- 여행 1건당 실제 검색은 최대 8개 고유 항목까지만 수행(쿼터 보호), 그 이상이거나 API 키가 없거나 결과가 부족하면 항목 제목 기반 목업 검색으로 자연스럽게 채워짐
 - 결과 카드는 유튜브는 실제 썸네일, 블로그는 실제 링크/스니펫을 보여줌 (`src/components/itinerary/source-card.tsx`)
+- Trip.com·Agoda 등 OTA 리뷰는 공식 API가 없어(비공식 스크래퍼만 존재) 도입하지 않음. Google Places 리뷰는 1,000건당 $40(Enterprise+Atmosphere)로 비용이 커 보류
 
-### 4.4 일정 영속화
+### 4.4 일정 동선 지도
+- 일정 결과 화면 상단에 국내/해외 여부에 따라 지도를 다르게 렌더링 (`src/components/itinerary/itinerary-map.tsx`)
+  - **국내** (`destination.region === "국내"`): Naver Maps JS SDK (Web 동적 지도)
+  - **해외**: Google Maps JavaScript API
+- 항목별 좌표는 생성 시점에 서버에서 미리 조회해 DB에 함께 저장 (지도를 열 때마다 다시 조회하지 않음)
+  - 국내: NAVER 지역검색(Local Search) API. 활동 서술어("산책", "투어" 등)가 붙으면 매칭이 실패해서, 제목 뒷단어부터 하나씩 줄여가며 핵심 장소명만 남을 때까지 재시도
+  - 해외: Google Geocoding API. 서술어가 섞인 문장도 안정적으로 처리되어 별도 재시도 로직 불필요
+- 좌표를 못 찾은 항목은 지도에서 빠지고(에러 처리 없이 조용히 스킵), 전 항목이 실패하면 지도 대신 빈 상태 문구를 보여줌
+- 마커는 일정 순서대로 번호가 매겨지고 Polyline으로 연결되어 동선을 나타냄; 지도 컨테이너는 `ResizeObserver`로 크기 변화 시 재배치되어 반응형으로 동작
+
+### 4.5 일정 영속화
 - 생성된 일정은 Neon Postgres `itineraries` 테이블에 저장되고 `/plan/result/[id]`로 영구 조회 가능 (기존 base64 토큰 인코딩 방식에서 전환 — 공유 링크가 항상 안정적으로 동작)
 - 로그인 사용자는 `userId`가 함께 저장됨(비로그인 생성은 현재 UI 플로우상 발생하지 않음)
 
-### 4.5 후기
+### 4.6 후기
 - `reviews` 테이블 기반 실사용자 후기 작성/조회 (`/reviews`)
 - 작성 폼은 낙관적 UI 업데이트 + 서버 액션(`createReviewAction`)으로 DB 저장
 - 로그인 사용자는 `userId`가 함께 기록되지만, 작성 자체는 비로그인도 가능(이름 직접 입력)
 - 홈페이지 하단에 최신 후기 3건 노출
 
-### 4.6 대시보드
+### 4.7 대시보드
 - 최근 30일 방문자/일정 생성 추이, 여행 목적 비중, 여행지별 평균 비용, 인기 여행지 Top 5
 - **현재 전량 목업 데이터**(`src/lib/mock/stats.ts`) — 실제 이벤트 트래킹 미연동 (§7 참고)
 
@@ -70,9 +81,10 @@ TripTube AI는 유튜브 영상과 네이버 블로그 글을 뒤져가며 여�
 | id | uuid, PK | |
 | user_id | text, nullable | Clerk userId |
 | destination / destination_name | text | 입력값 / 해석된 목적지명 |
+| region | text | "국내" \| "해외" (지도 provider 분기용) |
 | member_type, member_count, nights, month | text/int | 여행 조건 |
 | purposes | jsonb (string[]) | |
-| days | jsonb | 일자별 일정 전체(항목+출처 포함) |
+| days | jsonb | 일자별 일정 전체(항목+출처 3개+좌표 포함) |
 | estimated_total_cost | int | KRW |
 | currency | text | 기본 "KRW" |
 | created_at | timestamptz | |
@@ -94,7 +106,7 @@ TripTube AI는 유튜브 영상과 네이버 블로그 글을 뒤져가며 여�
 - **인증**: Clerk (`@clerk/nextjs`)
 - **DB/ORM**: Neon Postgres (서버리스), Drizzle ORM (`@neondatabase/serverless`, `drizzle-orm`, `drizzle-kit`)
 - **AI**: Vercel AI Gateway, `ai` SDK (`generateText` + `Output.object`), 모델 `anthropic/claude-sonnet-5`
-- **외부 API**: YouTube Data API v3, NAVER API HUB (블로그 검색)
+- **외부 API**: YouTube Data API v3, NAVER API HUB (블로그·지역검색), Naver Maps JS SDK, Google Maps JavaScript API, Google Geocoding API
 - **배포**: Vercel (Production: `triptube-ai.vercel.app`)
 
 ## 7. 알려진 한계 / 다음 단계
@@ -109,8 +121,17 @@ TripTube AI는 유튜브 영상과 네이버 블로그 글을 뒤져가며 여�
 - **일정 재생성 없음**: 한 번 생성된 일정은 고정되며, 사용자가 같은 조건으로 재생성하면 새 레코드가 또 생성됨(기존 레코드 삭제/버전관리 없음)
 - **테스트 코드 없음**: `npm run lint` 외 자동화된 테스트가 없음
 - **에러 모니터링 미설치**: 배포 시 Vercel drain(외부 모니터링 연동) 미구성 경고 확인됨
+- **`genericDestination()`의 지역 판정이 항상 "국내"**: `DESTINATIONS`에 없는 낯선 지명을 입력하면(예: 목록에 없는 해외 소도시) 국내로 간주되어 Naver Maps로 시도되므로 좌표를 못 찾을 수 있음
+- **지도 좌표 조회 실패 시 조용히 스킵**: 국내/해외 모두 좌표를 못 찾은 항목은 에러 없이 지도에서 빠짐 — 사용자에게는 "이 항목은 왜 지도에 없지?"로 보일 수 있음
+- **Maps Platform 키 2개 체계**: Google 쪽은 서버용(Geocoding, 무제한 도메인)과 클라이언트용(Maps JS, 리퍼러 제한) 키가 분리되어 있어야 함 — 리퍼러 제한 키로는 Geocoding 호출 자체가 거부됨
 
 ## 8. 변경 이력
+
+### 이번 작업 세션 (3)
+1. 일정 항목당 출처(유튜브/블로그)를 1개에서 최대 3개로 확장
+2. 일정 결과 화면에 **동선 지도** 추가 (`ItineraryMap`): 국내는 Naver Maps JS SDK, 해외는 Google Maps JavaScript API로 이원화. 생성 시점에 항목별 좌표를 서버에서 미리 조회해 DB에 저장
+3. 국내 좌표 조회(NAVER 지역검색)가 "산책"/"투어" 같은 활동 서술어가 붙으면 실패하는 문제를 발견해, 제목 뒷단어부터 줄여가며 재시도하는 로직 추가 (8/8 해결 확인). 해외(Google Geocoding)는 이 문제 없음
+4. 장소 리뷰는 Trip.com/Agoda(공식 API 없음), Naver 플레이스 리뷰(공식 API 미확인), Google Places 리뷰($40/1,000건)를 검토했으나 전부 채택하지 않고, 기존 실제 유튜브/블로그 검색을 확장하는 방식으로 대체
 
 ### 이번 작업 세션 (2)
 1. README.md를 현재 구현 상태(Clerk/Neon/AI Gateway/YouTube·NAVER API HUB 실연동)에 맞게 재작성

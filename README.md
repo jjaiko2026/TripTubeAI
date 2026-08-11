@@ -32,6 +32,13 @@ npm run dev
   - `npm run db:push` — 스키마를 Neon에 반영
   - `npm run db:seed` — 초기 후기 샘플 데이터 시딩
   - `npm run db:studio` — Drizzle Studio 실행
+- **일정 동선 지도**: 일정 생성 시 항목별 좌표를 조회해 저장하고, 결과 화면에서 국내는 Naver Maps, 해외는 Google Maps로 동선을 보여줍니다 (`src/lib/real/geocode.ts`, `src/components/itinerary/itinerary-map.tsx`).
+
+  | 환경변수 | 발급처 |
+  |---|---|
+  | `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` | NCP 콘솔 → Services → Application Services → **Maps** → Application 등록 (API로 "Web 동적 지도" 체크) — NAVER API HUB와는 별개 상품 |
+  | `GOOGLE_GEOCODING_API_KEY` | Google Cloud Console → Geocoding API 사용 설정 → API 키 (API 제한사항만, 리퍼러 제한 걸면 서버 호출이 막힘) |
+  | `NEXT_PUBLIC_GOOGLE_MAPS_CLIENT_KEY` | Google Cloud Console → Maps JavaScript API 사용 설정 → API 키 (애플리케이션 제한사항을 HTTP 리퍼러로, 배포 도메인 등록 필수 — 브라우저에 노출되는 키라서) |
 
 ## 주요 페이지
 

@@ -5,6 +5,7 @@ export const itineraries = pgTable("itineraries", {
   userId: text("user_id"),
   destination: text("destination").notNull(),
   destinationName: text("destination_name").notNull(),
+  region: text("region").notNull().default("국내"),
   memberType: text("member_type").notNull(),
   memberCount: integer("member_count").notNull(),
   nights: integer("nights").notNull(),

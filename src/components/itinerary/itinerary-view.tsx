@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SourceCard } from "@/components/itinerary/source-card";
+import { ItineraryMap } from "@/components/itinerary/itinerary-map";
 import { formatKRW, monthLabel } from "@/lib/format";
 import type { Itinerary } from "@/lib/types";
-import { MapPin, Users, CalendarDays, Wallet } from "lucide-react";
+import { MapPin, Users, CalendarDays, Wallet, Route } from "lucide-react";
 
 export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
   const { request } = itinerary;
@@ -41,6 +42,18 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
         )}
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Route className="h-4 w-4 text-primary" />
+            일정 동선
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ItineraryMap itinerary={itinerary} />
+        </CardContent>
+      </Card>
+
       <div className="space-y-6">
         {itinerary.days.map((day) => (
           <Card key={day.day}>
@@ -68,7 +81,11 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
                         ))}
                       </div>
                     </div>
-                    <SourceCard source={item.source} />
+                    <div className="space-y-2">
+                      {item.sources.map((source) => (
+                        <SourceCard key={source.id} source={source} />
+                      ))}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -78,8 +95,8 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        * 본 일정은 데모용 목업 데이터를 기반으로 생성되었습니다. 실제 서비스에서는 최근 1년 내 유튜브·블로그
-        데이터를 실시간으로 검색해 반영합니다. 방문 전 최신 정보를 다시 확인해 주세요.
+        * 본 일정은 AI가 최근 1년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를
+        다시 확인해 주세요.
       </p>
     </div>
   );
