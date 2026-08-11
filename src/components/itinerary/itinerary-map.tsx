@@ -12,6 +12,70 @@ interface Stop {
   location: GeoLocation;
 }
 
+// 이 거리보다 가까운 같은 날 마커들은 화면상 겹쳐 보여 번호를 구분할 수 없다고 보고 벌려줍니다.
+const OVERLAP_THRESHOLD_METERS = 60;
+// 겹친 마커들을 실제 위치를 중심으로 이 반경의 작은 원 위에 펼쳐 배치합니다.
+const SPREAD_RADIUS_METERS = 35;
+const METERS_PER_LAT_DEGREE = 111_320;
+
+function haversineMeters(a: GeoLocation, b: GeoLocation): number {
+  const R = 6_371_000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function offsetLocation(center: GeoLocation, meters: number, angleRad: number): GeoLocation {
+  const dLat = ((meters * Math.sin(angleRad)) / METERS_PER_LAT_DEGREE);
+  const metersPerLngDegree = METERS_PER_LAT_DEGREE * Math.cos((center.lat * Math.PI) / 180);
+  const dLng = metersPerLngDegree > 0 ? (meters * Math.cos(angleRad)) / metersPerLngDegree : 0;
+  return { lat: center.lat + dLat, lng: center.lng + dLng };
+}
+
+/**
+ * 같은 날 안에서 서로 아주 가까운(겹쳐 보이는) 좌표들을 찾아, 실제 위치를 중심으로 한
+ * 작은 원 위에 방문 순서대로 펼쳐 배치합니다. 지도 표시 전용 보정이라 실제 저장된
+ * item.location(동선 재정렬 등에 쓰이는 원본 좌표)은 건드리지 않습니다.
+ */
+function spreadOverlappingStops(stops: Stop[]): Stop[] {
+  const groupOf = new Array<number>(stops.length).fill(-1);
+  const groups: number[][] = [];
+
+  for (let i = 0; i < stops.length; i++) {
+    if (groupOf[i] !== -1) continue;
+    const group = [i];
+    groupOf[i] = groups.length;
+    for (let j = i + 1; j < stops.length; j++) {
+      if (groupOf[j] !== -1) continue;
+      if (haversineMeters(stops[i].location, stops[j].location) < OVERLAP_THRESHOLD_METERS) {
+        group.push(j);
+        groupOf[j] = groups.length;
+      }
+    }
+    groups.push(group);
+  }
+
+  const result = [...stops];
+  for (const group of groups) {
+    if (group.length < 2) continue;
+
+    const centroid = {
+      lat: group.reduce((sum, i) => sum + stops[i].location.lat, 0) / group.length,
+      lng: group.reduce((sum, i) => sum + stops[i].location.lng, 0) / group.length,
+    };
+
+    group.forEach((stopIndex, k) => {
+      const angle = (2 * Math.PI * k) / group.length;
+      result[stopIndex] = { ...stops[stopIndex], location: offsetLocation(centroid, SPREAD_RADIUS_METERS, angle) };
+    });
+  }
+
+  return result;
+}
+
 function collectStopsByDay(itinerary: Itinerary): Stop[][] {
   const byDay: Stop[][] = [];
   for (const day of itinerary.days) {
@@ -21,7 +85,7 @@ function collectStopsByDay(itinerary: Itinerary): Stop[][] {
         stops.push({ day: day.day, indexInDay: stops.length + 1, title: item.title, time: item.time, location: item.location });
       }
     }
-    if (stops.length > 0) byDay.push(stops);
+    if (stops.length > 0) byDay.push(spreadOverlappingStops(stops));
   }
   return byDay;
 }
