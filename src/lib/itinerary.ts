@@ -18,8 +18,10 @@ import { geocodeGoogle, geocodeNaverPlace } from "@/lib/real/geocode";
 const AI_MODEL = "anthropic/claude-sonnet-5";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 // 일정 항목 하나당 실제 유튜브/네이버 검색을 한 번씩 태우므로, 여행당 실제 검색
-// 횟수에 상한을 둡니다. 초과분은 (제목 기반) 목업 검색으로 대체됩니다.
-const MAX_REAL_SOURCE_LOOKUPS = 8;
+// 횟수에 상한을 둡니다. 3~4박 정도의 일반적인 여행은 전부 실검색으로 채워지고,
+// 30박까지 입력 가능한 극단적으로 긴 여행에서만 초과분이 (제목 기반) 목업으로
+// 대체되어 하루 쿼터가 한 번의 요청으로 소진되는 걸 막습니다.
+const MAX_REAL_SOURCE_LOOKUPS = 30;
 
 type PlanItem = { time: string; title: string; description: string; tags: Purpose[] };
 type PlanDay = { day: number; label: string; items: PlanItem[] };

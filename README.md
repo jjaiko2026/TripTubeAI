@@ -27,7 +27,7 @@ npm run dev
   | `YOUTUBE_API_KEY` | [Google Cloud Console](https://console.cloud.google.com) → YouTube Data API v3 사용 설정 → API 키 |
   | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | [네이버 개발자센터](https://developers.naver.com) → **NAVER API HUB**(`console.ncloud.com/naver-api-hub`) → Application 등록 → 사용 API에 "블로그" 체크 |
 
-  `.env.local`에 추가한 뒤 `npm run dev`를 재시작하면 바로 실 데이터로 전환됩니다. 네이버 블로그 검색은 `naverapihub.apigw.ntruss.com` 엔드포인트에 `X-NCP-APIGW-API-KEY(-ID)` 헤더로 인증합니다 (구 `openapi.naver.com` 방식은 더 이상 사용하지 않음). 여행 1건당 실제 검색은 최대 8개 고유 일정 항목까지만 수행해 쿼터를 아끼고, `/plan/example`은 1시간 캐시(`unstable_cache`)를 둡니다.
+  `.env.local`에 추가한 뒤 `npm run dev`를 재시작하면 바로 실 데이터로 전환됩니다. 네이버 블로그 검색은 `naverapihub.apigw.ntruss.com` 엔드포인트에 `X-NCP-APIGW-API-KEY(-ID)` 헤더로 인증합니다 (구 `openapi.naver.com` 방식은 더 이상 사용하지 않음). 여행 1건당 실제 검색은 최대 30개 고유 일정 항목까지 수행합니다(일반적인 3~4박 여행은 전부 실검색, 그 이상 긴 여행만 일부 목업으로 대체되어 하루 쿼터가 한 번에 소진되지 않게 함). `/plan/example`은 1시간 캐시(`unstable_cache`)를 둡니다.
 - **DB**: Neon Postgres + Drizzle ORM (`src/db/`). 일정(`itineraries`)과 후기(`reviews`)를 영구 저장합니다.
   - `npm run db:push` — 스키마를 Neon에 반영
   - `npm run db:seed` — 초기 후기 샘플 데이터 시딩

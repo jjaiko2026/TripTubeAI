@@ -22,7 +22,7 @@ const EXAMPLE_REQUEST: TripRequest = {
 // 배포에서 캐시된 옛 모양의 데이터를 그대로 읽지 않도록 합니다.
 const getExampleItinerary = unstable_cache(
   () => generateItinerary(EXAMPLE_REQUEST),
-  ["plan-example-itinerary-v4"],
+  ["plan-example-itinerary-v5"],
   { revalidate: 3600 }
 );
 
