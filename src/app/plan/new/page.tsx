@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { TripForm } from "@/components/plan/trip-form";
+import { RecentItineraries } from "@/components/plan/recent-itineraries";
+import { getRecentItinerariesForUser } from "@/db/queries";
 
 export default async function PlanNewPage() {
   const { userId } = await auth();
@@ -8,8 +10,12 @@ export default async function PlanNewPage() {
     redirect("/plan/example?login=required");
   }
 
+  const recentItineraries = await getRecentItinerariesForUser(userId, 3);
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+      <RecentItineraries itineraries={recentItineraries} />
+
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           어떤 여행을 계획하고 계신가요?

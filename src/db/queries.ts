@@ -25,6 +25,43 @@ export async function saveItinerary(itinerary: Itinerary, userId: string | null)
   return row.id;
 }
 
+export interface ItinerarySummary {
+  id: string;
+  destinationName: string;
+  region: Itinerary["region"];
+  memberType: string;
+  memberCount: number;
+  nights: number;
+  month: number;
+  createdAt: string;
+}
+
+/** 로그인한 사용자가 최근에 만든 일정을 다시 찾아갈 수 있게 요약 정보만 가져옵니다. */
+export async function getRecentItinerariesForUser(userId: string, limit = 3): Promise<ItinerarySummary[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: itineraries.id,
+      destinationName: itineraries.destinationName,
+      region: itineraries.region,
+      memberType: itineraries.memberType,
+      memberCount: itineraries.memberCount,
+      nights: itineraries.nights,
+      month: itineraries.month,
+      createdAt: itineraries.createdAt,
+    })
+    .from(itineraries)
+    .where(eq(itineraries.userId, userId))
+    .orderBy(desc(itineraries.createdAt))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    ...row,
+    region: row.region as Itinerary["region"],
+    createdAt: row.createdAt.toISOString(),
+  }));
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function getItinerary(id: string): Promise<Itinerary | null> {
