@@ -44,7 +44,7 @@ export async function fetchNaverBlogs(query: string, display = 8): Promise<Sourc
   const timeout = setTimeout(() => controller.abort(), 6000);
 
   try {
-    const url = new URL("https://openapi.naver.com/v1/search/blog.json");
+    const url = new URL("https://naverapihub.apigw.ntruss.com/search/v1/blog");
     url.searchParams.set("query", query);
     url.searchParams.set("display", String(display));
     url.searchParams.set("sort", "sim");
@@ -52,8 +52,8 @@ export async function fetchNaverBlogs(query: string, display = 8): Promise<Sourc
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "X-Naver-Client-Id": CLIENT_ID,
-        "X-Naver-Client-Secret": CLIENT_SECRET,
+        "X-NCP-APIGW-API-KEY-ID": CLIENT_ID,
+        "X-NCP-APIGW-API-KEY": CLIENT_SECRET,
       },
     });
     if (!res.ok) return [];
