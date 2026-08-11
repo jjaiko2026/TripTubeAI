@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { GeoLocation, Itinerary } from "@/lib/types";
+import { colorForDay } from "@/lib/day-colors";
 
 interface Stop {
   day: number;
@@ -9,21 +10,6 @@ interface Stop {
   title: string;
   time: string;
   location: GeoLocation;
-}
-
-const DAY_COLORS = [
-  "#0d9488", // teal
-  "#6366f1", // indigo
-  "#f59e0b", // amber
-  "#e11d48", // rose
-  "#8b5cf6", // violet
-  "#0891b2", // cyan
-  "#65a30d", // lime
-  "#db2777", // pink
-];
-
-function colorForDay(day: number): string {
-  return DAY_COLORS[(day - 1) % DAY_COLORS.length];
 }
 
 function collectStopsByDay(itinerary: Itinerary): Stop[][] {

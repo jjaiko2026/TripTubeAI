@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SourceCard, SourceReferenceLink } from "@/components/itinerary/source-card";
 import { ItineraryMap } from "@/components/itinerary/itinerary-map";
 import { formatKRW, monthLabel } from "@/lib/format";
+import { colorForDay } from "@/lib/day-colors";
 import type { Itinerary } from "@/lib/types";
 import { MapPin, Users, CalendarDays, Wallet, Route } from "lucide-react";
 
@@ -59,7 +60,10 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
           <Card key={day.day}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                <span
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white"
+                  style={{ backgroundColor: colorForDay(day.day) }}
+                >
                   {day.day}
                 </span>
                 {day.label}
