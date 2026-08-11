@@ -18,8 +18,6 @@ export interface DestinationProfile {
   activities: ActivityTemplate[];
 }
 
-const TIME_SLOTS = ["09:00", "11:30", "13:00", "15:30", "18:00", "20:00"];
-
 export const DESTINATIONS: DestinationProfile[] = [
   {
     id: "jeju",
@@ -221,8 +219,6 @@ export function genericDestination(name: string): DestinationProfile {
     ],
   };
 }
-
-export const TIME_SLOTS_DEFAULT = TIME_SLOTS;
 
 export interface AmbiguousDestinationOption {
   label: string;

@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { GeoLocation, Itinerary, ItineraryDay, ItineraryItem, Purpose, Source, TripRequest } from "@/lib/types";
 import { ALL_PURPOSES } from "@/lib/types";
 import {
-  DESTINATIONS,
   findDestination,
   genericDestination,
   type ActivityTemplate,
@@ -299,5 +298,3 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
     generatedAt: new Date().toISOString(),
   };
 }
-
-export const POPULAR_DESTINATION_NAMES = DESTINATIONS.map((d) => d.name);

@@ -8,7 +8,6 @@ interface Stop {
   day: number;
   indexInDay: number;
   title: string;
-  time: string;
   location: GeoLocation;
 }
 
@@ -82,7 +81,7 @@ function collectStopsByDay(itinerary: Itinerary): Stop[][] {
     const stops: Stop[] = [];
     for (const item of day.items) {
       if (item.location) {
-        stops.push({ day: day.day, indexInDay: stops.length + 1, title: item.title, time: item.time, location: item.location });
+        stops.push({ day: day.day, indexInDay: stops.length + 1, title: item.title, location: item.location });
       }
     }
     if (stops.length > 0) byDay.push(spreadOverlappingStops(stops));
