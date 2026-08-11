@@ -12,6 +12,7 @@
     "db:seed": "dotenv -e .env.local -- tsx scripts/seed-reviews.ts"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.62",
     "@base-ui/react": "^1.7.0",
     "@clerk/nextjs": "^7.7.1",
     "@clerk/ui": "^1.29.1",

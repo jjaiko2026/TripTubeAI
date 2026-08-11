@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import type { TransitionStartFunction } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,19 +16,26 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { ItineraryLoading } from "@/components/plan/itinerary-loading";
 import { createItineraryAction } from "@/lib/actions";
-import { ALL_MEMBER_TYPES, ALL_PURPOSES } from "@/lib/types";
+import { ALL_MEMBER_TYPES, ALL_PURPOSES, type MemberType, type Purpose, type TripRequest } from "@/lib/types";
 import { POPULAR_DESTINATION_NAMES } from "@/lib/itinerary";
 import { monthLabel } from "@/lib/format";
 
-export function TripForm() {
-  const [isPending, startTransition] = useTransition();
-  const [pendingDestination, setPendingDestination] = useState("");
-
+export function TripForm({
+  value,
+  onChange,
+  isPending,
+  startTransition,
+}: {
+  value: TripRequest;
+  onChange: (next: TripRequest) => void;
+  isPending: boolean;
+  startTransition: TransitionStartFunction;
+}) {
   if (isPending) {
     return (
       <Card>
         <CardContent className="pt-6">
-          <ItineraryLoading destination={pendingDestination} />
+          <ItineraryLoading destination={value.destination} />
         </CardContent>
       </Card>
     );
@@ -39,7 +46,6 @@ export function TripForm() {
       <CardContent className="pt-6">
         <form
           action={(formData) => {
-            setPendingDestination(String(formData.get("destination") ?? "").trim());
             startTransition(() => createItineraryAction(formData));
           }}
           className="space-y-6"
@@ -52,7 +58,8 @@ export function TripForm() {
               placeholder="예: 제주도, 도쿄, 부산 ..."
               list="destination-options"
               required
-              defaultValue="제주도"
+              value={value.destination}
+              onChange={(e) => onChange({ ...value, destination: e.target.value })}
             />
             <datalist id="destination-options">
               {POPULAR_DESTINATION_NAMES.map((name) => (
@@ -64,7 +71,11 @@ export function TripForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="memberType">구성원</Label>
-              <Select name="memberType" defaultValue="연인">
+              <Select
+                name="memberType"
+                value={value.memberType}
+                onValueChange={(v) => onChange({ ...value, memberType: v as MemberType })}
+              >
                 <SelectTrigger id="memberType" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -79,18 +90,40 @@ export function TripForm() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="memberCount">인원 수</Label>
-              <Input id="memberCount" name="memberCount" type="number" min={1} max={20} defaultValue={2} required />
+              <Input
+                id="memberCount"
+                name="memberCount"
+                type="number"
+                min={1}
+                max={20}
+                required
+                value={value.memberCount}
+                onChange={(e) => onChange({ ...value, memberCount: Number(e.target.value) })}
+              />
             </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="nights">숙박 일수 (박)</Label>
-              <Input id="nights" name="nights" type="number" min={0} max={30} defaultValue={3} required />
+              <Input
+                id="nights"
+                name="nights"
+                type="number"
+                min={0}
+                max={30}
+                required
+                value={value.nights}
+                onChange={(e) => onChange({ ...value, nights: Number(e.target.value) })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="month">여행 시기</Label>
-              <Select name="month" defaultValue={String(new Date().getMonth() + 1)}>
+              <Select
+                name="month"
+                value={String(value.month)}
+                onValueChange={(v) => onChange({ ...value, month: Number(v) })}
+              >
                 <SelectTrigger id="month" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -113,7 +146,19 @@ export function TripForm() {
                   key={purpose}
                   className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm has-[[data-checked]]:border-primary has-[[data-checked]]:bg-accent"
                 >
-                  <Checkbox name="purposes" value={purpose} defaultChecked={purpose === "힐링" || purpose === "맛집"} />
+                  <Checkbox
+                    name="purposes"
+                    value={purpose}
+                    checked={value.purposes.includes(purpose)}
+                    onCheckedChange={(checked) =>
+                      onChange({
+                        ...value,
+                        purposes: checked
+                          ? [...value.purposes, purpose]
+                          : value.purposes.filter((p: Purpose) => p !== purpose),
+                      })
+                    }
+                  />
                   {purpose}
                 </label>
               ))}
