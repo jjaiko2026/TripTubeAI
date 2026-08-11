@@ -78,23 +78,31 @@ function pillIconDataUrl(day: number, color: string, width = 48, height = 24) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function renderNaverMap(container: HTMLDivElement, stopsByDay: Stop[][]): any {
+interface MapInstance {
+  relayout(): void;
+  /** 활성화된 일차의 마커/동선만 지도에 남기고, 화면도 그 일차들에 맞춰 다시 맞춥니다. */
+  setActiveDays(days: Set<number>): void;
+}
+
+function renderNaverMap(container: HTMLDivElement, stopsByDay: Stop[][]): MapInstance {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const naver = (window as any).naver;
-  const bounds = new naver.maps.LatLngBounds();
+  const fullBounds = new naver.maps.LatLngBounds();
   const first = stopsByDay[0][0];
   const map = new naver.maps.Map(container, {
     center: new naver.maps.LatLng(first.location.lat, first.location.lng),
     zoom: 13,
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const layerByDay = new Map<number, { path: any[]; markers: any[]; polyline: any | null }>();
+
   stopsByDay.forEach((stops) => {
     const color = colorForDay(stops[0].day);
     const path = stops.map((s) => new naver.maps.LatLng(s.location.lat, s.location.lng));
-    path.forEach((p: unknown) => bounds.extend(p));
+    path.forEach((p: unknown) => fullBounds.extend(p));
 
-    stops.forEach((stop, i) => {
+    const markers = stops.map((stop, i) =>
       new naver.maps.Marker({
         position: path[i],
         map,
@@ -103,81 +111,107 @@ function renderNaverMap(container: HTMLDivElement, stopsByDay: Stop[][]): any {
           i === 0
             ? { content: dayStartIconHtml(stop.day, color), anchor: new naver.maps.Point(24, 12) }
             : { content: numberedIconHtml(stop.indexInDay, color), anchor: new naver.maps.Point(13, 13) },
-      });
-    });
+      })
+    );
 
-    if (path.length > 1) {
-      new naver.maps.Polyline({ map, path, strokeColor: color, strokeWeight: 3, strokeOpacity: 0.85 });
-    }
+    const polyline =
+      path.length > 1
+        ? new naver.maps.Polyline({ map, path, strokeColor: color, strokeWeight: 3, strokeOpacity: 0.85 })
+        : null;
+
+    layerByDay.set(stops[0].day, { path, markers, polyline });
   });
 
-  map.fitBounds(bounds);
+  map.fitBounds(fullBounds);
 
   return {
     relayout() {
       naver.maps.Event.trigger(map, "resize");
-      map.fitBounds(bounds);
+      map.fitBounds(fullBounds);
+    },
+    setActiveDays(days) {
+      const visibleBounds = new naver.maps.LatLngBounds();
+      layerByDay.forEach((layer, day) => {
+        const visible = days.has(day);
+        layer.markers.forEach((m) => m.setMap(visible ? map : null));
+        layer.polyline?.setMap(visible ? map : null);
+        if (visible) layer.path.forEach((p) => visibleBounds.extend(p));
+      });
+      if (!visibleBounds.isEmpty()) map.fitBounds(visibleBounds);
     },
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function renderGoogleMap(container: HTMLDivElement, stopsByDay: Stop[][]): any {
+function renderGoogleMap(container: HTMLDivElement, stopsByDay: Stop[][]): MapInstance {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const google = (window as any).google;
-  const bounds = new google.maps.LatLngBounds();
+  const fullBounds = new google.maps.LatLngBounds();
   const first = stopsByDay[0][0];
   const map = new google.maps.Map(container, { center: first.location, zoom: 13 });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const layerByDay = new Map<number, { points: any[]; markers: any[]; polyline: any | null }>();
+
   stopsByDay.forEach((stops) => {
     const color = colorForDay(stops[0].day);
-    stops.forEach((s) => bounds.extend(s.location));
+    stops.forEach((s) => fullBounds.extend(s.location));
 
-    stops.forEach((stop, i) => {
-      if (i === 0) {
-        new google.maps.Marker({
-          position: stop.location,
-          map,
-          title: stop.title,
-          icon: {
-            url: pillIconDataUrl(stop.day, color),
-            scaledSize: new google.maps.Size(48, 24),
-            anchor: new google.maps.Point(24, 12),
-          },
-          label: { text: `${stop.day}일차`, color: "#fff", fontSize: "11px", fontWeight: "700" },
-        });
-      } else {
-        new google.maps.Marker({
-          position: stop.location,
-          map,
-          title: stop.title,
-          icon: {
-            url: circleIconDataUrl(color),
-            scaledSize: new google.maps.Size(26, 26),
-            anchor: new google.maps.Point(13, 13),
-          },
-          label: { text: String(stop.indexInDay), color: "#fff", fontSize: "12px", fontWeight: "600" },
-        });
-      }
-    });
+    const markers = stops.map((stop, i) =>
+      i === 0
+        ? new google.maps.Marker({
+            position: stop.location,
+            map,
+            title: stop.title,
+            icon: {
+              url: pillIconDataUrl(stop.day, color),
+              scaledSize: new google.maps.Size(48, 24),
+              anchor: new google.maps.Point(24, 12),
+            },
+            label: { text: `${stop.day}일차`, color: "#fff", fontSize: "11px", fontWeight: "700" },
+          })
+        : new google.maps.Marker({
+            position: stop.location,
+            map,
+            title: stop.title,
+            icon: {
+              url: circleIconDataUrl(color),
+              scaledSize: new google.maps.Size(26, 26),
+              anchor: new google.maps.Point(13, 13),
+            },
+            label: { text: String(stop.indexInDay), color: "#fff", fontSize: "12px", fontWeight: "600" },
+          })
+    );
 
-    if (stops.length > 1) {
-      new google.maps.Polyline({
-        map,
-        path: stops.map((s) => s.location),
-        strokeColor: color,
-        strokeWeight: 3,
-        strokeOpacity: 0.85,
-      });
-    }
+    const polyline =
+      stops.length > 1
+        ? new google.maps.Polyline({
+            map,
+            path: stops.map((s) => s.location),
+            strokeColor: color,
+            strokeWeight: 3,
+            strokeOpacity: 0.85,
+          })
+        : null;
+
+    layerByDay.set(stops[0].day, { points: stops.map((s) => s.location), markers, polyline });
   });
 
-  map.fitBounds(bounds);
+  map.fitBounds(fullBounds);
 
   return {
     relayout() {
       google.maps.event.trigger(map, "resize");
-      map.fitBounds(bounds);
+      map.fitBounds(fullBounds);
+    },
+    setActiveDays(days) {
+      const visibleBounds = new google.maps.LatLngBounds();
+      layerByDay.forEach((layer, day) => {
+        const visible = days.has(day);
+        layer.markers.forEach((m) => m.setMap(visible ? map : null));
+        layer.polyline?.setMap(visible ? map : null);
+        if (visible) layer.points.forEach((p) => visibleBounds.extend(p));
+      });
+      if (!visibleBounds.isEmpty()) map.fitBounds(visibleBounds);
     },
   };
 }
@@ -185,7 +219,11 @@ function renderGoogleMap(container: HTMLDivElement, stopsByDay: Stop[][]): any {
 export function ItineraryMap({ itinerary }: { itinerary: Itinerary }) {
   const stopsByDay = collectStopsByDay(itinerary);
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<MapInstance | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [activeDays, setActiveDays] = useState<Set<number>>(
+    () => new Set(stopsByDay.map((stops) => stops[0].day))
+  );
 
   useEffect(() => {
     if (stopsByDay.length === 0 || !containerRef.current) {
@@ -194,7 +232,6 @@ export function ItineraryMap({ itinerary }: { itinerary: Itinerary }) {
     }
 
     let cancelled = false;
-    let instance: { relayout: () => void } | null = null;
 
     (async () => {
       try {
@@ -205,7 +242,7 @@ export function ItineraryMap({ itinerary }: { itinerary: Itinerary }) {
         }
         if (cancelled || !containerRef.current) return;
 
-        instance =
+        mapInstanceRef.current =
           itinerary.region === "국내"
             ? renderNaverMap(containerRef.current, stopsByDay)
             : renderGoogleMap(containerRef.current, stopsByDay);
@@ -216,15 +253,32 @@ export function ItineraryMap({ itinerary }: { itinerary: Itinerary }) {
       }
     })();
 
-    const resizeObserver = new ResizeObserver(() => instance?.relayout());
+    const resizeObserver = new ResizeObserver(() => mapInstanceRef.current?.relayout());
     if (containerRef.current) resizeObserver.observe(containerRef.current);
 
     return () => {
       cancelled = true;
+      mapInstanceRef.current = null;
       resizeObserver.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itinerary.region]);
+
+  useEffect(() => {
+    mapInstanceRef.current?.setActiveDays(activeDays);
+  }, [activeDays]);
+
+  function toggleDay(day: number) {
+    setActiveDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) {
+        next.delete(day);
+      } else {
+        next.add(day);
+      }
+      return next;
+    });
+  }
 
   if (stopsByDay.length === 0) {
     return (
@@ -237,16 +291,36 @@ export function ItineraryMap({ itinerary }: { itinerary: Itinerary }) {
   return (
     <div className="space-y-2">
       {stopsByDay.length > 1 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {stopsByDay.map((stops) => (
-            <span key={stops[0].day} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: colorForDay(stops[0].day) }}
-              />
-              {stops[0].day}일차
-            </span>
-          ))}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {stopsByDay.map((stops) => {
+            const day = stops[0].day;
+            const isActive = activeDays.has(day);
+            return (
+              <button
+                key={day}
+                type="button"
+                onClick={() => toggleDay(day)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-opacity hover:opacity-80"
+                style={{ opacity: isActive ? 1 : 0.4 }}
+                aria-pressed={isActive}
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: colorForDay(day) }}
+                />
+                <span className={isActive ? undefined : "line-through"}>{day}일차</span>
+              </button>
+            );
+          })}
+          {activeDays.size < stopsByDay.length && (
+            <button
+              type="button"
+              onClick={() => setActiveDays(new Set(stopsByDay.map((stops) => stops[0].day)))}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              전체 보기
+            </button>
+          )}
         </div>
       )}
       <div className="relative">
@@ -259,6 +333,11 @@ export function ItineraryMap({ itinerary }: { itinerary: Itinerary }) {
         {status === "error" && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-muted/40 text-sm text-muted-foreground">
             지도를 불러오지 못했어요.
+          </div>
+        )}
+        {status === "ready" && activeDays.size === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-muted/40 text-sm text-muted-foreground">
+            선택된 일차가 없어요. 일차를 눌러 다시 표시해 주세요.
           </div>
         )}
       </div>
