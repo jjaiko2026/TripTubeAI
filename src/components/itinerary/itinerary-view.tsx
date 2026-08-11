@@ -76,7 +76,7 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
               {day.items.map((item, idx) => (
                 <div key={idx} className="grid gap-3 sm:grid-cols-[64px_1fr] sm:gap-4">
                   <div className="text-sm font-medium text-muted-foreground sm:pt-1">{item.time}</div>
-                  <div className="space-y-2 border-l pl-4 sm:border-l sm:pl-4">
+                  <div className="min-w-0 space-y-2 border-l pl-4 sm:border-l sm:pl-4">
                     <div>
                       <p className="font-medium">{item.title}</p>
                       <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>

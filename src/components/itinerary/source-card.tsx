@@ -10,7 +10,7 @@ export function SourceReferenceLink({ source }: { source: Source }) {
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary hover:underline"
+      className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary hover:underline"
     >
       {source.kind === "youtube" ? (
         <SquarePlay className="h-3 w-3 shrink-0" />
