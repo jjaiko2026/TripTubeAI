@@ -59,8 +59,8 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
         {itinerary.days.map((day) => (
           <Card key={day.day}>
             <CardHeader
-              className="rounded-t-xl"
-              style={{ backgroundColor: `${colorForDay(day.day)}1A` }}
+              className="-mt-(--card-spacing) rounded-t-xl pt-(--card-spacing)"
+              style={{ backgroundColor: `${colorForDay(day.day)}4D` }}
             >
               <CardTitle className="flex items-center gap-2 text-base">
                 <span
