@@ -96,6 +96,10 @@ async function generateItineraryWithAI(
         "마지막 날은 이동/귀가를 고려해 3개 이하로 구성하세요.",
         "가능하면 activityCatalog의 활동을 활용하되, purposes와 memberType에 맞게 재구성/각색해도 됩니다.",
         "각 항목의 tags는 request.purposes 중심으로 선택하세요.",
+        "각 항목의 title은 지도에 찍을 수 있는 구체적인 장소 하나만 가리켜야 합니다. " +
+          "'A와 B', 'A & B'처럼 서로 다른 두 장소를 한 항목에 합치지 마세요 — 그런 경우 별도 항목으로 나누세요.",
+        "같은 날 안에서는 지리적으로 자연스러운 한 방향 동선이 되도록 항목을 배치하세요 " +
+          "(예: 서쪽에서 동쪽으로 순서대로 이동). 하루 안에서 지역을 여러 번 왔다갔다 하지 마세요.",
       ],
       activityCatalog,
     }),
@@ -175,11 +179,24 @@ function mockBestSources(query: string, count: number): Source[] {
   return merged.slice(0, count);
 }
 
+/**
+ * AI가 프롬프트 지시를 어기고 "성산일출봉과 우도"처럼 두 장소를 한 항목에 합친 경우를
+ * 대비한 안전장치입니다. '&', '·', '와/과 '로 이어진 뒷부분을 잘라내고 첫 번째 장소명만
+ * 남깁니다. (조사 "과"가 앞 단어에 그대로 붙어있으면 지역검색이 매칭에 실패하기 때문에,
+ * 뒤에 붙는 장소명째로 버리는 게 조사를 억지로 떼어내는 것보다 안전합니다.)
+ */
+function primaryPlaceQuery(title: string): string {
+  const bySymbol = title.split(/\s*[&·]\s*/)[0];
+  const byParticle = bySymbol.match(/^(.*?)(?:와|과)\s+.+$/);
+  return (byParticle ? byParticle[1] : bySymbol).trim() || title;
+}
+
 /** 목적지가 국내인지 해외인지에 따라 네이버 지역검색/구글 Geocoding 중 하나로 좌표를 조회합니다. */
 async function geocodeItem(destination: DestinationProfile, title: string): Promise<GeoLocation | null> {
+  const place = primaryPlaceQuery(title);
   return destination.region === "국내"
-    ? geocodeNaverPlace(destination.name, title)
-    : geocodeGoogle(`${destination.name} ${title}`);
+    ? geocodeNaverPlace(destination.name, place)
+    : geocodeGoogle(`${destination.name} ${place}`);
 }
 
 /**
@@ -198,9 +215,12 @@ async function attachSourcesAndLocations(destination: DestinationProfile, plan: 
     uniqueTitles.map(async (title, i) => {
       const query = `${destination.name} ${title}`;
       const withinCap = i < MAX_REAL_SOURCE_LOOKUPS;
+      // 지오코딩(네이버 지역검색/구글 Geocoding)은 유튜브 검색만큼 쿼터가 빠듯하지 않고,
+      // 지도가 일정 전체를 보여주려면 항목이 몇 개든 좌표를 다 조회해야 하므로 소스
+      // 검색과 상한을 공유하지 않습니다.
       const [sources, location] = await Promise.all([
         withinCap ? fetchBestSources(query) : Promise.resolve(mockBestSources(query, SOURCES_PER_ITEM)),
-        withinCap ? geocodeItem(destination, title) : Promise.resolve(null),
+        geocodeItem(destination, title),
       ]);
       sourcesByTitle.set(title, sources);
       locationByTitle.set(title, location);

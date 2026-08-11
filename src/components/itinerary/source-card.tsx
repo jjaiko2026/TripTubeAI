@@ -3,6 +3,25 @@ import Image from "next/image";
 import { ExternalLink, Newspaper, SquarePlay } from "lucide-react";
 import type { Source } from "@/lib/types";
 
+/** 메인 출처 아래에 붙는 보조 참조 링크 (2~3번째 소스). */
+export function SourceReferenceLink({ source }: { source: Source }) {
+  return (
+    <Link
+      href={source.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary hover:underline"
+    >
+      {source.kind === "youtube" ? (
+        <SquarePlay className="h-3 w-3 shrink-0" />
+      ) : (
+        <Newspaper className="h-3 w-3 shrink-0" />
+      )}
+      <span className="truncate">{source.title}</span>
+    </Link>
+  );
+}
+
 const THUMB_GRADIENTS = [
   "from-teal-500 to-emerald-500",
   "from-indigo-500 to-sky-500",

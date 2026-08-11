@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SourceCard } from "@/components/itinerary/source-card";
+import { SourceCard, SourceReferenceLink } from "@/components/itinerary/source-card";
 import { ItineraryMap } from "@/components/itinerary/itinerary-map";
 import { formatKRW, monthLabel } from "@/lib/format";
 import type { Itinerary } from "@/lib/types";
@@ -81,11 +81,18 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      {item.sources.map((source) => (
-                        <SourceCard key={source.id} source={source} />
-                      ))}
-                    </div>
+                    {item.sources.length > 0 && (
+                      <div className="space-y-1.5">
+                        <SourceCard source={item.sources[0]} />
+                        {item.sources.length > 1 && (
+                          <div className="space-y-1 pl-1">
+                            {item.sources.slice(1).map((source) => (
+                              <SourceReferenceLink key={source.id} source={source} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
