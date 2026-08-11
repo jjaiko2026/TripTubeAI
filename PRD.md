@@ -1,146 +1,202 @@
-# TripTube AI — PRD
+# TripTube AI — 제품 요구사항 문서 (PRD)
 
 ## 1. 개요
 
-TripTube AI는 유튜브 영상과 네이버 블로그 글을 뒤져가며 여행 일정을 짜는 수고를 없애주는 서비스다. 여행 조건(목적지·인원·기간·시기·목적)을 입력하면 AI가 실제 검색된 유튜브/블로그 자료를 근거로 일자별 일정을 만들어주고, 각 일정 항목에는 그 활동과 실제로 관련 있는 출처(영상/게시글) 링크가 함께 붙는다.
+| 항목 | 내용 |
+|---|---|
+| 프로젝트명 | TripTube AI |
+| 네이밍 유래 | Trip + YouTube + AI |
+| 한 줄 정의 | 유튜브·블로그에 흩어진 여행 정보를 AI가 대신 검색·정리해서, 대화 또는 폼 입력 한 번으로 완성된 여행 일정을 만들어주는 웹앱 |
+| 배포 링크 | https://triptube-ai.vercel.app |
+| 문서 버전 | v2.0 (2026-08-12) — 실연동/배포 완료 시점 기준으로 전면 갱신 |
 
-- **배포 URL**: https://triptube-ai.vercel.app
-- **저장소**: https://github.com/jjaiko2026/TripTubeAI
-- **인프라**: Vercel (Next.js), Neon Postgres, Vercel AI Gateway, Clerk
+## 2. 문제 정의 (Problem Statement)
 
-## 2. 타깃 사용자
+여행을 계획하는 사람들은 정보를 얻기 위해 유튜브 영상을 여러 개 검색해서 시청한다. 그 과정에서 아래와 같은 불편함이 발생한다.
 
-- 국내/해외 여행을 계획 중이며, 유튜브·블로그를 오가며 정보를 모으는 수고를 줄이고 싶은 개인 여행자
-- 혼자/친구/가족/연인/동료 등 다양한 구성으로 여행하는 사용자
+- 영상을 이 영상 저 영상 넘겨보다가 **앞서 본 영상의 내용을 잊어버림**
+- 여러 영상·블로그에서 얻은 정보가 **정리되지 않고 흩어져 있음**
+- 정보 탐색 자체에 **많은 시간이 소요**됨 (검색 → 시청 → 메모 → 재검색 반복)
+- 최종적으로 "결국 나는 무엇을 봤고, 무엇을 해야 하는지" **하나의 일정으로 귀결되지 않음**
+- 폼에 조건을 하나씩 입력하는 것 자체가 번거로워, 그냥 말로 풀어서 물어보고 싶은 사용자도 있음
 
-## 3. 핵심 사용자 플로우
+## 3. 목표 (Goals)
+
+1. 사용자가 여행 조건(여행지/지역/인원/기간/시기/목적)만 입력하면, AI가 실제 유튜브 영상·블로그 글을 조회하여 **이상적인 여행 일정을 자동으로 구성**한다.
+2. 결과물에는 **참조한 유튜브 영상의 썸네일·링크**, **참조한 블로그 글 링크**, **지도 동선**을 함께 제시하여 신뢰도와 출처를 보여준다.
+3. 폼 입력이 부담스러운 사용자를 위해 **대화형 챗봇**이 니즈를 되물어가며 조건을 정리하고, 그 내용을 폼에 실시간으로 반영한다.
+4. 실제로 이 서비스를 통해 여행을 다녀온 사용자들의 **후기**를 노출하여 사회적 증거(social proof)를 제공한다.
+5. **대시보드**(방문자 수, 일정 생성 실행 횟수, 여행지별 평균 여행 비용 그래프)를 통해 서비스에 대한 신뢰를 형성한다.
+6. 로그인 사용자에게는 실제 일정 생성·관리(삭제 포함) 기능을, 비로그인 사용자에게는 예시 화면(데모)을 제공하여 가입 전환을 유도한다.
+
+### Non-goals (이번 범위에서 제외)
+
+- 실제 항공권/숙박 예약·결제 연동
+- 다국어(영어 등) 지원 (1차는 한국어)
+- 네이티브 모바일 앱
+- 사용자용 일정 PDF/이미지 내보내기 (별도 백로그로 이월)
+
+## 4. 타깃 사용자
+
+- 여행 계획 초기 단계에서 유튜브·블로그를 순회하며 정보를 모으는 20~40대 개인/그룹 여행 준비자
+- 짧은 시간 안에 "그럴듯한 초안 일정"을 받아 이를 다듬어 쓰고 싶은 사용자
+- 조건을 항목별로 입력하기보다 대화로 편하게 풀어내고 싶은 사용자
+
+## 5. 핵심 사용자 흐름 (User Flow)
 
 ```
-방문 → (비로그인) 예시 일정 확인 → 로그인 → 조건 입력 → AI 일정 생성 → 결과 확인/공유
-                                                              ↓
-                                                        후기 열람/작성
+[방문] → 랜딩 페이지 (/)
+   ├─ 비로그인 → 예시(데모) 일정 화면 열람(/plan/example) → 로그인 유도
+   └─ 로그인 → 일정 만들기 (/plan/new)
+                  │
+                  ├─ 최근 만든 일정 카드 노출 (다시 보기 · 삭제)
+                  │
+                  ├─(A) 폼에 직접 입력 ──────┐
+                  │                          │
+                  └─(B) 챗봇과 대화 ───────► (실시간으로 서로 동기화되는
+                        (니즈를 되물어         하나의 조건 상태)
+                         조건을 정리)                │
+                                                      ▼
+                       [여행 지역(국내/해외) / 여행지 / 구성원 / 인원 /
+                        박수 / 여행 시기(월) / 여행 목적] 확정
+                        └─ 지역명이 여러 곳과 겹치면(예: 광주) 어느 지역인지
+                           선택하도록 재확인
+                                                      ▼
+                AI(Claude Sonnet 5)가 실제 유튜브 영상 + 블로그 글을
+                검색·분석해 일자별 여행 일정 생성 (장소, 이동 동선, 숙소)
+                                                      ▼
+                참조 유튜브 썸네일/링크, 블로그 링크, 지도 동선 함께 노출
+                                                      ▼
+                일정 저장(Neon Postgres) → 결과 페이지(/plan/result/[id])
+                                                      ▼
+                최근 일정 목록에서 재방문 / 삭제, (여행 후) 후기 작성
 ```
 
-1. **비로그인 사용자**는 `/plan/example`에서 고정된 예시 일정(제주도, 연인, 3박4일, 힐링·맛집)을 보고 서비스를 체험한다.
-2. **로그인**(Clerk)하면 `/plan/new`에서 여행 조건(목적지, 구성원 유형/인원, 숙박일수, 시기, 목적 태그)을 입력할 수 있다.
-3. 조건을 제출하면 AI가 일정을 생성해 DB에 저장하고, `/plan/result/[id]`로 이동해 영구적으로 조회 가능한 결과를 보여준다.
-4. 사용자는 `/reviews`에서 다른 사람의 후기를 보거나 직접 후기를 남길 수 있다.
-5. `/dashboard`에서 서비스 이용 현황(방문자, 일정 생성 수, 인기 여행지, 여행지별 평균 비용)을 확인할 수 있다.
+## 6. 기능 요구사항 (Functional Requirements)
 
-## 4. 기능 명세
+### 6.1 랜딩 페이지 (비로그인)
+- 문제 상황(유튜브 검색을 전전하는 모습)을 시각적으로 소개, 실제 여행지 사진을 배경으로 사용
+- 서비스가 그 문제를 어떻게 해결하는지 설명 (Before/After)
+- **예시 일정 화면**을 실제 생성 로직으로 만든 캐시된 샘플로 제공 (`/plan/example`)
+- 방문자/실행 통계, 여행지별 평균 비용 그래프 등 신뢰 지표 노출
+- 여행 후기 리스트 노출
+- 로그인/회원가입 CTA
 
-### 4.1 인증 (Clerk)
-- Clerk 기반 로그인/회원가입 (`/sign-in`, `/sign-up`)
-- `clerkMiddleware`로 전역 라우트 보호, `/plan/new` 등은 비로그인 시 예시 페이지로 리다이렉트
+### 6.2 인증
+- Clerk 기반 로그인/회원가입 (이메일+비밀번호, Google 소셜 로그인)
+- 로그인 사용자만 실제 "일정 생성" 기능 이용 가능
+- 비로그인 사용자가 `/plan/new` 접근 시 `/plan/example?login=required`로 리다이렉트
 
-### 4.2 AI 여행 일정 생성
-- **모델**: Vercel AI Gateway 경유 `anthropic/claude-sonnet-5` (`src/lib/itinerary.ts`)
-- 입력 조건 + 목적지 대표 활동 후보(`src/lib/mock/destinations.ts`)를 참고해 일자별 시간/제목/설명/태그로 구성된 일정 뼈대를 생성
-- AI 호출 실패 시(쿼터 초과, 네트워크 오류 등) 결정론적 시드 기반 템플릿 로직으로 자동 폴백 — 항상 결과를 반환
-- 예상 총 비용은 AI가 아닌 목적지별 평균 비용 데이터로 계산 (환각 방지)
+### 6.3 여행 일정 요청 폼 (`/plan/new`)
+입력 항목:
+- **여행 지역** (국내 / 해외) — 지오코딩·지도 공급자 선택의 기준이 되는 값으로, 사용자가 직접 확정 (AI 추측에 의존하지 않음)
+- 여행지 (텍스트 입력, 지역에 따라 필터링된 인기 목적지 추천)
+  - 이름이 여러 지역과 겹치는 경우(예: 광주 — 광주광역시/경기 광주시) 화살표로 탐색 가능한 선택지를 추가로 보여주고, 확정 전에는 제출을 막음
+- 구성원 (혼자/친구/가족/연인/동료) 및 인원 수
+- 숙박 일수 (몇 박)
+- 여행 시기 (월)
+- 여행 목적 (힐링, 맛집, 액티비티, 문화·역사, 쇼핑 등 다중 선택)
+- 상단에 로그인 사용자의 **최근 만든 일정**(최대 3개) 카드 노출, 카드별 삭제 버튼 제공
 
-### 4.3 실제 출처 매칭 (유튜브 · 네이버 블로그)
-- 일정 항목마다(제목이 같으면 캐시 재사용) `"{목적지} {항목 제목}"`으로 실제 검색을 수행해, 그 활동과 실제로 관련 있는 영상/블로그를 최대 3개까지 붙인다 (여행 전체에 대한 뭉뚱그린 검색이 아님)
-- **YouTube Data API v3**: 최근 1년 이내 영상만
-- **NAVER API HUB 블로그 검색**: `naverapihub.apigw.ntruss.com/search/v1/blog`, `X-NCP-APIGW-API-KEY(-ID)` 인증 (구 `openapi.naver.com` 방식에서 마이그레이션)
-- 여행 1건당 실제 검색은 최대 30개 고유 항목까지 수행(일반적인 3~4박 여행은 전부 실검색, 그 이상 긴 여행이거나 API 키가 없거나 결과가 부족하면 항목 제목 기반 목업 검색으로 자연스럽게 채워짐)
-- 결과 카드는 유튜브는 실제 썸네일, 블로그는 실제 링크/스니펫을 보여줌 (`src/components/itinerary/source-card.tsx`)
-- Trip.com·Agoda 등 OTA 리뷰는 공식 API가 없어(비공식 스크래퍼만 존재) 도입하지 않음. Google Places 리뷰는 1,000건당 $40(Enterprise+Atmosphere)로 비용이 커 보류
+### 6.4 여행 플래너 챗봇
+- `/plan/new`에서 폼과 나란히 노출되는 대화형 챗봇(Google Gemini 3.6 Flash, Vercel AI Gateway 경유)
+- 사용자가 자연스러운 문장으로 여행 니즈를 말하면, 한 번에 다 묻지 않고 한두 개씩 되물으며 조건을 파악
+- 파악한 조건을 `updateTripDraft` 툴 호출로 폼에 실시간 반영 (스트리밍 중에도 옆 폼이 즉시 갱신됨)
+- 목적지 이름이 여러 지역과 겹칠 수 있으면 임의로 추측하지 않고 사용자에게 되물어 확정
+- 필요한 조건이 다 모이면 폼을 확인하고 "AI 여행 일정 만들기" 버튼을 눌러달라고 안내
 
-### 4.4 일정 동선 지도
-- 일정 결과 화면 상단에 국내/해외 여부에 따라 지도를 다르게 렌더링 (`src/components/itinerary/itinerary-map.tsx`)
-  - **국내** (`destination.region === "국내"`): Naver Maps JS SDK (Web 동적 지도)
-  - **해외**: Google Maps JavaScript API
-- 항목별 좌표는 생성 시점에 서버에서 미리 조회해 DB에 함께 저장 (지도를 열 때마다 다시 조회하지 않음)
-  - 국내: NAVER 지역검색(Local Search) API. 활동 서술어("산책", "투어" 등)가 붙으면 매칭이 실패해서, 제목 뒷단어부터 하나씩 줄여가며 핵심 장소명만 남을 때까지 재시도
-  - 해외: Google Geocoding API. 서술어가 섞인 문장도 안정적으로 처리되어 별도 재시도 로직 불필요
-- 좌표를 못 찾은 항목은 지도에서 빠지고(에러 처리 없이 조용히 스킵), 전 항목이 실패하면 지도 대신 빈 상태 문구를 보여줌
-- 마커는 일정 순서대로 번호가 매겨지고 Polyline으로 연결되어 동선을 나타냄; 지도 컨테이너는 `ResizeObserver`로 크기 변화 시 재배치되어 반응형으로 동작
+### 6.5 AI 일정 생성 엔진
+- Claude Sonnet 5(Vercel AI Gateway)를 구조화 출력(스키마 기반)으로 호출해 일자별 장소·시간·설명 뼈대 생성
+- 일정을 짜기 전에 날짜별 담당 소지역(`dayRegions`)을 먼저 정하게 하여, 이미 지나온 지역을 다른 날짜에 왔다갔다 다시 방문하지 않도록 동선을 유도
+- 항목 제목마다 실제 YouTube Data API / Naver 블로그 검색 API로 검색해 관련 영상·블로그를 최대 3개까지 매칭 (검색 결과가 부족하거나 쿼터 초과 시 목업으로 보완)
+- 항목마다 좌표를 지오코딩해서 붙임 — 국내는 Naver 지역검색, 해외는 Google Geocoding API. Google Geocoding이 행정구역 단위로만 매칭된 결과(실제 장소를 못 찾은 경우)는 버리고 좌표 없음으로 처리해, 서로 다른 장소가 같은 좌표로 겹쳐 찍히는 것을 방지
+- 하루 안에서는 좌표 기반 2-opt 최적화로 자연스러운 동선 순서로 재정렬
+- AI 호출이 실패하면(쿼터 초과, 네트워크 오류 등) 결정론적 대체 로직으로 폴백
 
-### 4.5 일정 영속화
-- 생성된 일정은 Neon Postgres `itineraries` 테이블에 저장되고 `/plan/result/[id]`로 영구 조회 가능 (기존 base64 토큰 인코딩 방식에서 전환 — 공유 링크가 항상 안정적으로 동작)
-- 로그인 사용자는 `userId`가 함께 저장됨(비로그인 생성은 현재 UI 플로우상 발생하지 않음)
+### 6.6 결과 화면 (`/plan/result/[id]`)
+- 일자별 타임라인 UI (카드, 참조 출처 포함)
+- 참조 유튜브 영상: 썸네일 + 제목 + 채널명 + 원본 링크
+- 참조 블로그 글: 제목 + 요약 + 원본 링크
+- **지도 동선**: 지역(국내/해외)에 따라 Naver Maps 또는 Google Maps로 렌더링, 일자별 색상 구분
+  - 일차 범례를 클릭해 해당 일차의 마커/동선을 켜고 끌 수 있음 (일정이 길어질 때 지도가 복잡해지는 문제 완화)
+  - 같은 날 안에서 서로 아주 가까운(겹쳐 보이는) 좌표들은 실제 위치를 중심으로 작은 원 위에 펼쳐 배치해 번호를 구분할 수 있게 함
+- 일정 저장(자동), 공유(링크), PDF/이미지 내보내기는 백로그
 
-### 4.6 후기
-- `reviews` 테이블 기반 실사용자 후기 작성/조회 (`/reviews`)
-- 작성 폼은 낙관적 UI 업데이트 + 서버 액션(`createReviewAction`)으로 DB 저장
-- 로그인 사용자는 `userId`가 함께 기록되지만, 작성 자체는 비로그인도 가능(이름 직접 입력)
-- 홈페이지 하단에 최신 후기 3건 노출
+### 6.7 최근 일정 관리
+- 로그인 사용자가 만든 일정을 최근 순으로 카드 목록에 노출 (`/plan/new` 상단)
+- 카드별 삭제 버튼 — 확인 후 삭제, 본인이 만든 일정만 삭제 가능하도록 서버에서 소유자 검증
 
-### 4.7 대시보드
-- 최근 30일 방문자/일정 생성 추이, 여행 목적 비중, 여행지별 평균 비용, 인기 여행지 Top 5
-- **현재 전량 목업 데이터**(`src/lib/mock/stats.ts`) — 실제 이벤트 트래킹 미연동 (§7 참고)
+### 6.8 후기(리뷰)
+- 일정을 이용해 여행을 다녀온 사용자가 후기 작성 (평점 + 텍스트)
+- 랜딩 페이지 및 별도 후기 목록 페이지(`/reviews`)에 노출
 
-## 5. 데이터 모델 (Neon Postgres, Drizzle ORM)
+### 6.9 대시보드 (신뢰 지표)
+- 누적 방문자 수 / 일정 생성 실행 횟수 (시계열 그래프)
+- 여행지별 평균 여행 비용 (막대/비교 그래프)
+- 인기 여행지 Top N
+- 목적별(힐링/맛집/액티비티 등) 비중
 
-`src/db/schema.ts`
+## 7. 정보 구조 (Sitemap)
 
-**itineraries**
-| 컬럼 | 타입 | 비고 |
-|---|---|---|
-| id | uuid, PK | |
-| user_id | text, nullable | Clerk userId |
-| destination / destination_name | text | 입력값 / 해석된 목적지명 |
-| region | text | "국내" \| "해외" (지도 provider 분기용) |
-| member_type, member_count, nights, month | text/int | 여행 조건 |
-| purposes | jsonb (string[]) | |
-| days | jsonb | 일자별 일정 전체(항목+출처 3개+좌표 포함) |
-| estimated_total_cost | int | KRW |
-| currency | text | 기본 "KRW" |
-| created_at | timestamptz | |
+```
+/                       랜딩 (비로그인: 데모/신뢰 지표, 로그인: 동일 + CTA)
+/sign-in, /sign-up      Clerk 로그인/회원가입
+/plan                   로그인 여부에 따라 /plan/new 또는 /plan/example로 리다이렉트
+/plan/new               일정 만들기 — 최근 일정 목록 + 챗봇 + 입력 폼 (로그인 필요)
+/plan/example           비로그인용 예시 일정 (실제 생성 로직으로 만든 캐시된 샘플)
+/plan/result/[id]       생성된 일정 결과 (지도 + 일자별 카드)
+/reviews                여행 후기 목록
+/dashboard              통계 대시보드
+/api/trip-chat          챗봇 스트리밍 API 라우트 (로그인 필요)
+```
 
-**reviews**
-| 컬럼 | 타입 | 비고 |
-|---|---|---|
-| id | uuid, PK | |
-| user_id | text, nullable | |
-| author, destination, title, content | text | |
-| rating | int | 1~5 |
-| trip_month, nights | int | |
-| created_at | timestamptz | |
+## 8. 데이터 모델
 
-## 6. 기술 스택
+- **itineraries** (Neon Postgres, Drizzle ORM)
+  - id(uuid), userId(nullable), destination, destinationName, region(국내|해외), memberType, memberCount, nights, month, purposes(jsonb), days(jsonb — 일자별 항목/좌표/출처 전체), estimatedTotalCost, currency, createdAt
+- **reviews**
+  - id(uuid), userId(nullable), author, destination, rating, title, content, tripMonth, nights, createdAt
+- **TripRequest** (앱 내부 타입, DB 컬럼과 1:1 대응)
+  - destination, region, memberType, memberCount, nights, month, purposes[]
+- **Itinerary** (앱 내부 타입)
+  - request(TripRequest), destinationName, region, days[{day, label, items[{time, title, description, tags[], sources[](youtube|blog), location(lat/lng|null)}]}], estimatedTotalCost, currency, generatedAt
 
-- **프레임워크**: Next.js 16 (App Router, Turbopack), React 19
-- **UI**: Tailwind CSS v4, shadcn 계열 컴포넌트, Recharts
-- **인증**: Clerk (`@clerk/nextjs`)
-- **DB/ORM**: Neon Postgres (서버리스), Drizzle ORM (`@neondatabase/serverless`, `drizzle-orm`, `drizzle-kit`)
-- **AI**: Vercel AI Gateway, `ai` SDK (`generateText` + `Output.object`), 모델 `anthropic/claude-sonnet-5`
-- **외부 API**: YouTube Data API v3, NAVER API HUB (블로그·지역검색), Naver Maps JS SDK, Google Maps JavaScript API, Google Geocoding API
-- **배포**: Vercel (Production: `triptube-ai.vercel.app`)
+## 9. 기술 스택
 
-## 7. 알려진 한계 / 다음 단계
+| 영역 | 스택 |
+|---|---|
+| 프레임워크 | Next.js 16 (App Router, Turbopack) + React 19 + TypeScript |
+| 스타일 / UI | Tailwind CSS v4, shadcn/ui + Base UI |
+| 차트 | Recharts |
+| AI / LLM | Vercel AI SDK v7 + Vercel AI Gateway, Claude Sonnet 5(일정 생성), Google Gemini 3.6 Flash(챗봇), Zod(구조화 출력 스키마) |
+| 인증 | Clerk |
+| 데이터베이스 | Neon Serverless Postgres + Drizzle ORM |
+| 외부 API | YouTube Data API v3, Naver 지역검색/블로그 검색 API, Naver Maps JS SDK, Google Geocoding API, Google Maps JavaScript API |
+| 배포 | Vercel (Hosting, AI Gateway, 환경변수/도메인 관리) |
 
-- **README가 최신화되지 않았음** → 이번 세션에서 해결됨(§8)
-- **대시보드 방문자 수·전환율이 여전히 목업**: `itineraries`/`reviews` 테이블에서 집계 가능한 "일정 생성 건수·인기 여행지·목적 비중"은 이번 세션에서 실데이터로 전환했지만, 페이지 방문 자체를 추적하는 이벤트 로깅이 없어 "방문자 수"와 "평균 전환율"은 여전히 목업임. 실 지표가 필요하면 Vercel Analytics 연동이나 자체 이벤트 로깅 추가 필요
-- **"내가 만든 일정" 목록 페이지 없음**: `itineraries.user_id`를 저장해두고도 사용자가 과거에 만든 일정들을 다시 볼 UI가 없음(개별 결과 URL로만 재조회 가능)
-- **AI 생성 비용**: 여행 1건당 AI 호출 1회 + 실제 검색 최대 60회(유튜브/블로그 각 최대 30회) + 좌표 조회(항목 수만큼, 상한 없음)로, 트래픽이 늘면 YouTube 일일 쿼터·AI Gateway 크레딧·지도 API 비용을 모니터링해야 함. 30박(최대 입력값)처럼 극단적으로 긴 여행은 한 번의 요청으로 하루 쿼터를 크게 소모할 수 있음
-- **`/plan/example` 캐시**: 1시간 단위로 캐시되어 비로그인 방문자에게는 쿼터 절약이 되지만, 최초 캐시 미스 시 응답이 느릴 수 있음(항목별 실검색+좌표 조회가 늘어나며 관측된 첫 생성 시간이 27초→56초로 증가)
-- **후기 스팸 방지 없음**: 현재 후기 작성에 로그인/레이트리밋 제약이 없어 악용 가능성이 있음
-- **일정 생성에 레이트리밋 없음**: 로그인 사용자가 연속 생성 시 AI Gateway 크레딧·YouTube 쿼터가 빠르게 소진될 수 있음
-- **일정 재생성 없음**: 한 번 생성된 일정은 고정되며, 사용자가 같은 조건으로 재생성하면 새 레코드가 또 생성됨(기존 레코드 삭제/버전관리 없음)
-- **테스트 코드 없음**: `npm run lint` 외 자동화된 테스트가 없음
-- **에러 모니터링 미설치**: 배포 시 Vercel drain(외부 모니터링 연동) 미구성 경고 확인됨
-- **`genericDestination()`의 지역 판정이 항상 "국내"**: `DESTINATIONS`에 없는 낯선 지명을 입력하면(예: 목록에 없는 해외 소도시) 국내로 간주되어 Naver Maps로 시도되므로 좌표를 못 찾을 수 있음
-- **지도 좌표 조회 실패 시 조용히 스킵**: 국내/해외 모두 좌표를 못 찾은 항목은 에러 없이 지도에서 빠짐 — 사용자에게는 "이 항목은 왜 지도에 없지?"로 보일 수 있음
-- **Maps Platform 키 2개 체계**: Google 쪽은 서버용(Geocoding, 무제한 도메인)과 클라이언트용(Maps JS, 리퍼러 제한) 키가 분리되어 있어야 함 — 리퍼러 제한 키로는 Geocoding 호출 자체가 거부됨
+> 실제 API 키/쿼터가 없거나 초과된 경우를 대비해 YouTube/블로그 검색 결과와 일부 좌표는 목업으로 보완되도록 되어 있어, 데모 환경에서도 전체 흐름이 끊기지 않는다.
 
-## 8. 변경 이력
+## 10. 성공 지표 (KPI)
 
-### 이번 작업 세션 (3)
-1. 일정 항목당 출처(유튜브/블로그)를 1개에서 최대 3개로 확장
-2. 일정 결과 화면에 **동선 지도** 추가 (`ItineraryMap`): 국내는 Naver Maps JS SDK, 해외는 Google Maps JavaScript API로 이원화. 생성 시점에 항목별 좌표를 서버에서 미리 조회해 DB에 저장
-3. 국내 좌표 조회(NAVER 지역검색)가 "산책"/"투어" 같은 활동 서술어가 붙으면 실패하는 문제를 발견해, 제목 뒷단어부터 줄여가며 재시도하는 로직 추가 (8/8 해결 확인). 해외(Google Geocoding)는 이 문제 없음
-4. 장소 리뷰는 Trip.com/Agoda(공식 API 없음), Naver 플레이스 리뷰(공식 API 미확인), Google Places 리뷰($40/1,000건)를 검토했으나 전부 채택하지 않고, 기존 실제 유튜브/블로그 검색을 확장하는 방식으로 대체
+- 여행 조건 입력 → 일정 생성 완료율
+- 챗봇 대화 시작 대비 폼 자동완성 성공률
+- 생성된 일정 저장 후 재방문율, 삭제율
+- 후기 작성률
+- (장기) 실제 예약 전환 연동 시 전환율
 
-### 이번 작업 세션 (2)
-1. README.md를 현재 구현 상태(Clerk/Neon/AI Gateway/YouTube·NAVER API HUB 실연동)에 맞게 재작성
-2. 대시보드의 "일정 생성 건수", "인기 여행지", "여행 목적 비중"을 `itineraries` 테이블 실집계로 전환 (`getDashboardData`, `src/db/queries.ts`). 표본이 없을 때는 가짜 데이터로 채우지 않고 빈 상태 문구를 보여줌. 방문자 수·전환율은 여전히 목업
+## 11. 리스크 및 오픈 이슈
 
-### 이번 작업 세션 (1)
-1. Neon Postgres 프로비저닝(Vercel Marketplace) 및 Drizzle 스키마 구축
-2. 일정 생성 결과를 base64 토큰 대신 DB(`itineraries`)에 영구 저장하는 방식으로 전환
-3. 후기(`reviews`)를 목업 배열에서 실사용자 DB 기반 기능으로 전환
-4. 여행 일정 생성 로직을 결정론적 랜덤 조합에서 Vercel AI Gateway(`claude-sonnet-5`) 기반 생성으로 교체, 실패 시 기존 로직으로 자동 폴백
-5. 일정 항목마다 실제 관련 있는 유튜브 영상/네이버 블로그를 개별 검색해 매칭하도록 구조 변경(기존: 여행 전체 공용 검색 풀에서 순환 배정)
-6. 네이버 블로그 검색을 NAVER API HUB 신규 엔드포인트/인증 방식으로 마이그레이션 (기존 `openapi.naver.com` 방식은 더 이상 동작하지 않음)
+- 유튜브/블로그 콘텐츠 저작권 및 이용약관 준수 (임베드/링크 형태로만 노출, 무단 재배포 금지)
+- YouTube Data API / Naver API 쿼터 제한 → 캐싱·목업 보완 전략 이미 적용
+- AI가 생성한 일정의 사실 정확성(영업시간, 폐업 여부 등) 검증 어려움 → "정보는 참고용이며 최신 정보를 다시 확인하세요" 안내 필요
+- Google Geocoding이 묘사적 제목(실제 상호명이 아닌 제목)에 대해 행정구역 단위로만 매칭되는 경우가 있어, 서로 다른 장소가 같은 좌표로 겹치는 문제가 있었음 → 행정구역 단위 매칭 결과는 좌표 없음으로 처리하도록 수정 완료
+- Clerk 개발 인스턴스의 봇 방지(Cloudflare Turnstile)로 인해 로그인 플로우의 자동화 테스트/스크린샷 캡처가 제한됨 → 정상적인 보안 동작이며 우회하지 않음
+- Naver/Google 지도 API 키가 배포 도메인 단위로 제한되어 있어, 로컬 개발 환경에서는 지도가 표시되지 않음 → 지도 관련 변경은 배포 후 확인 필요
+
+## 12. 로드맵
+
+1. **Phase 1 (완료)**: 목 데이터 기반 전체 플로우 데모 (UI/UX 완성)
+2. **Phase 2 (완료)**: YouTube Data API, Naver 블로그/지역검색 API, Google Geocoding/Maps API, AI Gateway(Claude Sonnet 5) 실연동
+3. **Phase 3 (완료)**: Clerk 인증 + Neon Postgres(Drizzle ORM) 연동, 후기/대시보드 실데이터화, Vercel 프로덕션 배포
+4. **Phase 4 (완료)**: 대화형 챗봇(Gemini 3.6 Flash)으로 폼 자동완성, 여행 지역 명시 선택 및 지역명 중복 해소, 지도 일차 토글·마커 겹침 보정, 최근 일정 삭제 기능
+5. **Phase 5 (예정)**: 일정 공유(링크), 사용자용 일정 PDF/이미지 내보내기, 예약 연동 검토
