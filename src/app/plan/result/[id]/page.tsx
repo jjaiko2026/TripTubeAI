@@ -1,30 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { unstable_cache } from "next/cache";
 import { ArrowLeft, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
-import { decodeTripRequest, generateItinerary } from "@/lib/mock/itinerary";
-import type { TripRequest } from "@/lib/types";
-
-// 토큰(=조건)이 같으면 같은 결과이므로, 재방문/공유 시 유튜브·블로그 API를
-// 다시 호출하지 않도록 토큰별로 1시간 캐시합니다.
-const getCachedItinerary = unstable_cache(
-  (token: string, request: TripRequest) => generateItinerary(request),
-  ["plan-result-itinerary"],
-  { revalidate: 3600 }
-);
+import { getItinerary } from "@/db/queries";
 
 export default async function PlanResultPage({
   params,
 }: {
-  params: Promise<{ token: string }>;
+  params: Promise<{ id: string }>;
 }) {
-  const { token } = await params;
-  const request = decodeTripRequest(token);
-  if (!request) notFound();
-
-  const itinerary = await getCachedItinerary(token, request);
+  const { id } = await params;
+  const itinerary = await getItinerary(id);
+  if (!itinerary) notFound();
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">

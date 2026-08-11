@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReviewCard } from "@/components/reviews/review-card";
 import { HeroVideoBackground } from "@/components/hero-video-background";
 import { Show, SignInButton } from "@clerk/nextjs";
-import { REVIEWS } from "@/lib/mock/reviews";
+import { getReviews } from "@/db/queries";
 import { DESTINATION_COSTS, generateUsageStats, totalUsage } from "@/lib/mock/stats";
 import { getHotDestinationVideo } from "@/lib/mock/hero";
 import { formatKRW, formatNumber } from "@/lib/format";
@@ -48,7 +48,8 @@ const STEPS = [
   { icon: Link2, title: "출처까지 확인", desc: "참고한 영상·블로그 링크를 그대로 확인해요" },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const reviews = await getReviews();
   const usage = generateUsageStats(30);
   const totals = totalUsage(usage);
   const topCosts = [...DESTINATION_COSTS].sort((a, b) => b.popularity - a.popularity).slice(0, 4);
@@ -264,7 +265,7 @@ export default function Home() {
             </Button>
           </div>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            {REVIEWS.slice(0, 3).map((r) => (
+            {reviews.slice(0, 3).map((r) => (
               <ReviewCard key={r.id} review={r} />
             ))}
           </div>

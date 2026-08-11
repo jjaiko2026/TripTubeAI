@@ -109,20 +109,4 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   };
 }
 
-export function encodeTripRequest(request: TripRequest): string {
-  const json = JSON.stringify(request);
-  return Buffer.from(json, "utf-8").toString("base64url");
-}
-
-export function decodeTripRequest(token: string): TripRequest | null {
-  try {
-    const json = Buffer.from(token, "base64url").toString("utf-8");
-    const parsed = JSON.parse(json);
-    if (!parsed || typeof parsed !== "object" || !parsed.destination) return null;
-    return parsed as TripRequest;
-  } catch {
-    return null;
-  }
-}
-
 export const POPULAR_DESTINATION_NAMES = DESTINATIONS.map((d) => d.name);
