@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { generateItinerary } from "@/lib/itinerary";
-import { createReview, saveItinerary } from "@/db/queries";
+import { createReview, deleteItinerary, saveItinerary } from "@/db/queries";
 import type { MemberType, Purpose, Region, TripRequest } from "@/lib/types";
 
 export async function createItineraryAction(formData: FormData) {
@@ -26,6 +26,17 @@ export async function createItineraryAction(formData: FormData) {
   const itinerary = await generateItinerary(request);
   const id = await saveItinerary(itinerary, userId ?? null);
   redirect(`/plan/result/${id}`);
+}
+
+export async function deleteItineraryAction(formData: FormData) {
+  const { userId } = await auth();
+  if (!userId) return;
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  await deleteItinerary(id, userId);
+  revalidatePath("/plan/new");
 }
 
 export async function createReviewAction(formData: FormData) {

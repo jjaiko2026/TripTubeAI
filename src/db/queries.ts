@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { itineraries, reviews } from "@/db/schema";
 import type { Itinerary, ItineraryDay, Purpose, Review } from "@/lib/types";
@@ -60,6 +60,12 @@ export async function getRecentItinerariesForUser(userId: string, limit = 3): Pr
     region: row.region as Itinerary["region"],
     createdAt: row.createdAt.toISOString(),
   }));
+}
+
+/** 본인이 만든 일정만 지울 수 있도록 userId까지 조건에 포함합니다. */
+export async function deleteItinerary(id: string, userId: string): Promise<void> {
+  const db = getDb();
+  await db.delete(itineraries).where(and(eq(itineraries.id, id), eq(itineraries.userId, userId)));
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
