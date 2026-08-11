@@ -162,7 +162,7 @@ export function TripForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="month">여행 시기</Label>
+              <Label htmlFor="month">여행 시기 (월)</Label>
               <Select
                 name="month"
                 value={String(value.month)}
