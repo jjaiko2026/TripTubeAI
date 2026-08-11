@@ -62,6 +62,32 @@ export async function geocodeNaverPlace(destinationName: string, title: string):
 
 interface GoogleGeocodeResult {
   geometry?: { location?: { lat: number; lng: number } };
+  types?: string[];
+}
+
+// Geocoding API는 주소용이라, "한강뷰 다낭 시내 숙소"처럼 실제 상호가 아닌 묘사적
+// 제목을 던지면 정확한 매칭 대신 도시/행정구역 단위로 뭉뚱그려 응답하곤 합니다(status는
+// 여전히 "OK"). 이런 결과는 서로 다른 장소들이 전부 같은 도시 중심 좌표로 겹쳐 찍히는
+// 원인이 되므로, 결과의 types가 행정구역급뿐이면 장소를 못 찾은 것으로 취급합니다.
+const LOCALITY_LEVEL_TYPES = new Set([
+  "locality",
+  "sublocality",
+  "sublocality_level_1",
+  "sublocality_level_2",
+  "sublocality_level_3",
+  "administrative_area_level_1",
+  "administrative_area_level_2",
+  "administrative_area_level_3",
+  "administrative_area_level_4",
+  "administrative_area_level_5",
+  "country",
+  "political",
+  "postal_code",
+]);
+
+function isLocalityLevelOnly(result: GoogleGeocodeResult): boolean {
+  const types = result.types ?? [];
+  return types.length > 0 && types.every((t) => LOCALITY_LEVEL_TYPES.has(t));
 }
 
 /** 해외 좌표: Google Geocoding API. */
@@ -82,8 +108,9 @@ export async function geocodeGoogle(query: string): Promise<GeoLocation | null> 
     const json = (await res.json()) as { status: string; results?: GoogleGeocodeResult[] };
     if (json.status !== "OK") return null;
 
-    const location = json.results?.[0]?.geometry?.location;
-    if (!location) return null;
+    const result = json.results?.[0];
+    const location = result?.geometry?.location;
+    if (!result || !location || isLocalityLevelOnly(result)) return null;
 
     return { lat: location.lat, lng: location.lng };
   } catch {
