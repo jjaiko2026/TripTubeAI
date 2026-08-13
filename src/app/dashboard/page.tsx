@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { auth } from "@clerk/nextjs/server";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Users, Sparkles, MapPin, TrendingUp } from "lucide-react";
 import {
@@ -6,12 +7,28 @@ import {
   PurposePieChart,
   VisitsChart,
 } from "@/components/dashboard/dashboard-charts";
+import { SheetsSyncPanel } from "@/components/dashboard/sheets-sync-panel";
 import { DESTINATION_COSTS, generateUsageStats, totalUsage } from "@/lib/mock/stats";
 import { getDashboardData } from "@/db/queries";
 import { formatNumber } from "@/lib/format";
+import { isAdminUser } from "@/lib/admin";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sheets?: string; count?: string; approved?: string; rejected?: string }>;
+}) {
+  const { userId } = await auth();
   const dashboard = await getDashboardData(30);
+  const params = await searchParams;
+  const sheetsMessage =
+    params.sheets === "exported"
+      ? `CONTENT_MASTER 시트로 ${params.count}개 항목을 내보냈어요.`
+      : params.sheets === "imported"
+        ? `승인 ${params.approved}건, 거부 ${params.rejected}건을 반영했어요.`
+        : params.sheets === "error"
+          ? "시트 연동 중 오류가 발생했어요. 환경변수와 시트 공유 설정을 확인해주세요."
+          : null;
 
   // 방문자 수는 아직 실제 이벤트 트래킹이 없어 목업이지만, 일정 생성 건수는
   // itineraries 테이블에서 집계한 실제 값으로 대체합니다.
@@ -33,6 +50,25 @@ export default async function DashboardPage() {
           최근 30일간의 방문자·일정 생성 현황과 여행지별 평균 비용을 확인해 보세요.
         </p>
       </div>
+
+      {sheetsMessage && (
+        <div className="mb-6 rounded-lg border bg-accent/40 px-4 py-3 text-sm">{sheetsMessage}</div>
+      )}
+
+      {isAdminUser(userId) && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>콘텐츠 검수 시트</CardTitle>
+            <CardDescription>
+              캐시된 유튜브/블로그 소스를 Google Sheets(CONTENT_MASTER)로 내보내 검수하고, 시트에서 표시한
+              승인·거부를 다시 불러와 일정 생성에 반영해요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SheetsSyncPanel />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile

@@ -16,6 +16,15 @@ export const updateTripDraftTool = tool({
     nights: z.number().int().min(0).max(30).optional().describe("숙박 일수 (박)"),
     month: z.number().int().min(1).max(12).optional().describe("여행 시기 (월, 1~12)"),
     purposes: z.array(z.enum(ALL_PURPOSES as [Purpose, ...Purpose[]])).optional().describe("여행 목적/테마 (복수 선택 가능)"),
+    notes: z
+      .string()
+      .optional()
+      .describe(
+        "사용자가 명시적으로 지정한 세부 요구사항을 정리한 전체 텍스트 (예: '2일차는 성산 근처로', " +
+          "'우도는 꼭 포함', '흑돼지 맛집 저녁으로 넣어줘', '한라산은 빼줘'). 필드 하나당 값 하나가 아니라 " +
+          "지금까지 파악된 요구사항 전체를 매번 새로 정리해서 보내세요(이전 요구사항도 빠뜨리지 말고 " +
+          "포함시켜 누적) — 다른 필드처럼 이번 턴에 새로 안 바뀌었으면 아예 보내지 마세요."
+      ),
   }),
   outputSchema: z.string(),
 });
@@ -37,7 +46,12 @@ export function buildTripChatSystemPrompt(currentDraft: TripRequest): string {
     "당신은 TripTube AI의 여행 플래너 챗봇입니다. 사용자와 자연스러운 한국어 대화를 통해 여행 조건을 파악해서, " +
       "화면 옆에 있는 일정 입력 폼을 실시간으로 채워주는 역할을 합니다.",
     "파악해야 할 항목은 폼의 필드와 정확히 대응합니다: 여행 지역(region, 국내/해외), 여행지(destination), 구성원 유형" +
-      "(memberType), 인원 수(memberCount), 숙박 일수(nights), 여행 시기(month, 1~12월), 여행 목적/테마(purposes, 복수 선택).",
+      "(memberType), 인원 수(memberCount), 숙박 일수(nights), 여행 시기(month, 1~12월), 여행 목적/테마(purposes, 복수 선택), " +
+      "그리고 세부 요구사항(notes, 자유 텍스트).",
+    "사용자가 '2일차는 성산 근처로 해줘', '우도는 꼭 가고 싶어', '저녁은 흑돼지 맛집으로', '한라산은 빼줘'처럼 " +
+      "특정 날짜의 지역을 지정하거나, 일정 전체의 지역/동선을 지정하거나, 꼭 포함하거나 빼고 싶은 관광지·식당· " +
+      "활동을 구체적으로 언급하면, 이를 반드시 notes 필드에 정리해서 담으세요. 이런 요구사항은 최종 일정을 짤 때 " +
+      "다른 조건보다 우선적으로 반영되니, 놓치지 말고 최대한 구체적으로 (날짜/지역/장소명을 명시해서) 적으세요.",
     `구성원 유형은 다음 중 하나여야 합니다: ${ALL_MEMBER_TYPES.join(", ")}.`,
     `여행 목적/테마는 다음 중에서 골라야 합니다: ${ALL_PURPOSES.join(", ")}.`,
     "목적지가 대한민국 국내인지 해외인지는 당신이 알고 있는 사실대로 region 필드도 함께 채우세요 (예: 하노이 → 해외).",

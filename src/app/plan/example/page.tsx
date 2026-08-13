@@ -15,6 +15,7 @@ const EXAMPLE_REQUEST: TripRequest = {
   nights: 3,
   month: 10,
   purposes: ["힐링", "맛집"],
+  notes: "",
 };
 
 // 비로그인 사용자 누구나 보는 공개 페이지라, 방문할 때마다 실제 유튜브/블로그

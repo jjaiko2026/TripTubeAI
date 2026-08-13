@@ -17,12 +17,13 @@ export async function createItineraryAction(formData: FormData) {
   const nights = Math.max(0, Number(formData.get("nights") ?? 2));
   const month = Math.min(12, Math.max(1, Number(formData.get("month") ?? new Date().getMonth() + 1)));
   const purposes = formData.getAll("purposes").map(String) as Purpose[];
+  const notes = String(formData.get("notes") ?? "").trim();
 
   if (!destination) {
     redirect("/plan/new?error=destination");
   }
 
-  const request: TripRequest = { destination, region, memberType, memberCount, nights, month, purposes };
+  const request: TripRequest = { destination, region, memberType, memberCount, nights, month, purposes, notes };
   const itinerary = await generateItinerary(request);
   const id = await saveItinerary(itinerary, userId ?? null);
   redirect(`/plan/result/${id}`);

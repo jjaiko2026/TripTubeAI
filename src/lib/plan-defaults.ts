@@ -9,5 +9,6 @@ export function defaultTripRequest(): TripRequest {
     nights: 3,
     month: new Date().getMonth() + 1,
     purposes: ["힐링", "맛집"],
+    notes: "",
   };
 }

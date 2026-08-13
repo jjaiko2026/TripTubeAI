@@ -4,6 +4,7 @@ import type { TransitionStartFunction } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -207,6 +208,20 @@ export function TripForm({
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="notes">추가 요청사항 (선택)</Label>
+            <Textarea
+              id="notes"
+              name="notes"
+              placeholder="예: 2일차는 성산 근처로, 우도는 꼭 넣어주세요 / 저녁은 흑돼지 맛집으로"
+              value={value.notes}
+              onChange={(e) => onChange({ ...value, notes: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              특정 날짜의 지역, 꼭 가고 싶은 장소나 맛집이 있으면 적어주세요. 챗봇과 대화하면 자동으로 채워져요.
+            </p>
           </div>
 
           <Button type="submit" className="w-full" size="lg" disabled={isAmbiguousUnresolved}>

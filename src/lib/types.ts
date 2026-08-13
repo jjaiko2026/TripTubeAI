@@ -26,6 +26,8 @@ export interface TripRequest {
   nights: number;
   month: number;
   purposes: Purpose[];
+  /** 특정 날짜의 지역 지정, 꼭 가고 싶은 장소/맛집 등 사용자가 명시한 요청사항 (자유 텍스트) */
+  notes: string;
 }
 
 export interface SourceVideo {

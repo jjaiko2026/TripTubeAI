@@ -86,6 +86,8 @@ export async function getItinerary(id: string): Promise<Itinerary | null> {
       nights: row.nights,
       month: row.month,
       purposes: row.purposes as Purpose[],
+      // notes는 생성 시점에만 쓰이고 저장하지 않으므로, 조회 시에는 빈 값으로 복원합니다.
+      notes: "",
     },
     destinationName: row.destinationName,
     region: row.region as Itinerary["region"],
