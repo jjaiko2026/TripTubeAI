@@ -3,9 +3,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ItineraryItemCard } from "@/components/itinerary/itinerary-item-card";
 import { ItineraryMap } from "@/components/itinerary/itinerary-map";
+import { TripTipsCard } from "@/components/itinerary/trip-tips-card";
 import { formatKRW, monthLabel } from "@/lib/format";
 import { colorForDay } from "@/lib/day-colors";
 import type { Itinerary } from "@/lib/types";
+import { PURPOSE_LABELS } from "@/lib/purposes";
 import { MapPin, Users, CalendarDays, Wallet, Route } from "lucide-react";
 
 export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
@@ -13,6 +15,8 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
 
   return (
     <div className="space-y-8">
+      <TripTipsCard tripTips={itinerary.tripTips} />
+
       <Card>
         <CardContent className="grid gap-4 pt-6 sm:grid-cols-4">
           <SummaryStat icon={<MapPin className="h-4 w-4" />} label="여행지" value={itinerary.destinationName} />
@@ -35,8 +39,8 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
         {request.purposes.length > 0 && (
           <CardContent className="flex flex-wrap gap-2 pt-0">
             {request.purposes.map((p) => (
-              <Badge key={p} variant="secondary">
-                {p}
+              <Badge key={p.id} variant={p.priority === "core" ? "default" : "secondary"}>
+                {PURPOSE_LABELS[p.id]}
               </Badge>
             ))}
           </CardContent>

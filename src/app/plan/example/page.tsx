@@ -14,7 +14,10 @@ const EXAMPLE_REQUEST: TripRequest = {
   memberCount: 2,
   nights: 3,
   month: 10,
-  purposes: ["힐링", "맛집"],
+  purposes: [
+    { id: "healing", priority: "core" },
+    { id: "food", priority: "important" },
+  ],
   notes: "",
 };
 
@@ -24,7 +27,7 @@ const EXAMPLE_REQUEST: TripRequest = {
 // 배포에서 캐시된 옛 모양의 데이터를 그대로 읽지 않도록 합니다.
 const getExampleItinerary = unstable_cache(
   () => generateItinerary(EXAMPLE_REQUEST),
-  ["plan-example-itinerary-v6"],
+  ["plan-example-itinerary-v10"],
   { revalidate: 3600 }
 );
 

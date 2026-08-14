@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SourceCard, SourceReferenceLink } from "@/components/itinerary/source-card";
 import { cn } from "@/lib/utils";
 import type { ItineraryItem } from "@/lib/types";
+import { purposeLabel } from "@/lib/purposes";
 
 /**
  * 일정 항목 하나를 펼치기/접기 가능한 카드로 표시합니다. indexInDay는 지도 핀 번호와
@@ -62,7 +63,7 @@ export function ItineraryItemCard({
           <div className="flex flex-wrap gap-1.5">
             {item.tags.map((tag) => (
               <Badge key={tag} variant="outline" className="text-[11px]">
-                {tag}
+                {purposeLabel(tag)}
               </Badge>
             ))}
           </div>

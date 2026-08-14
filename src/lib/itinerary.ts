@@ -1,7 +1,7 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import type { GeoLocation, Itinerary, ItineraryDay, ItineraryItem, Purpose, Source, TripRequest } from "@/lib/types";
-import { ALL_PURPOSES } from "@/lib/types";
+import type { GeoLocation, Itinerary, ItineraryDay, ItineraryItem, Source, TripRequest } from "@/lib/types";
+import { ALL_PURPOSE_IDS, PURPOSE_LABELS, type PurposeId, type PurposePriority } from "@/lib/purposes";
 import {
   findDestination,
   genericDestination,
@@ -16,18 +16,15 @@ import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
 import { getCachedSources, saveCachedSources } from "@/db/source-cache";
 import { getRejectedSourceIds } from "@/db/content-moderation";
+import { tryAcquireSearchLock, releaseSearchLock } from "@/db/search-lock";
+import { consumeYoutubeQuota } from "@/db/rate-limit";
+import { generateTripTips } from "@/lib/trip-tips";
+import { buildSearchPlan, type SearchPlan } from "@/lib/search-plan";
 
 const AI_MODEL = "anthropic/claude-sonnet-5";
-// 소스 랭킹은 캐시가 없을 때(쿼리당 한 번)만 호출되는 부가 단계라, 가볍고 저렴한 모델로 충분합니다.
-const SOURCE_RANKING_MODEL = "google/gemini-3.6-flash";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
-// 일정 항목 하나당 실제 유튜브/네이버 검색을 한 번씩 태우므로, 여행당 실제 검색
-// 횟수에 상한을 둡니다. 3~4박 정도의 일반적인 여행은 전부 실검색으로 채워지고,
-// 30박까지 입력 가능한 극단적으로 긴 여행에서만 초과분이 (제목 기반) 목업으로
-// 대체되어 하루 쿼터가 한 번의 요청으로 소진되는 걸 막습니다.
-const MAX_REAL_SOURCE_LOOKUPS = 30;
 
-type PlanItem = { time: string; title: string; description: string; tags: Purpose[] };
+type PlanItem = { time: string; title: string; description: string; tags: PurposeId[] };
 type PlanDay = { day: number; label: string; items: PlanItem[] };
 
 function requestSeedKey(request: TripRequest) {
@@ -37,7 +34,7 @@ function requestSeedKey(request: TripRequest) {
     request.memberCount,
     request.nights,
     request.month,
-    request.purposes.join(","),
+    request.purposes.map((p) => `${p.id}:${p.priority}`).join(","),
     request.notes,
   ].join("::");
 }
@@ -63,7 +60,7 @@ const planSchema = z.object({
           time: z.string(),
           title: z.string(),
           description: z.string(),
-          tags: z.array(z.enum(ALL_PURPOSES as [Purpose, ...Purpose[]])).min(1),
+          tags: z.array(z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]])).min(1),
         })
       ),
     })
@@ -103,7 +100,7 @@ async function generateItineraryWithAI(
         memberCount: request.memberCount,
         nights: request.nights,
         month: request.month,
-        purposes: request.purposes,
+        purposes: request.purposes.map((p) => ({ id: p.id, label: PURPOSE_LABELS[p.id], priority: p.priority })),
         notes: request.notes || undefined,
       },
       timeSlotsHint: DAY_TIME_SLOTS,
@@ -129,7 +126,9 @@ async function generateItineraryWithAI(
         "하루에 3~5개 항목을 시간 순으로 배치하세요 (time 형식: HH:MM).",
         "마지막 날은 이동/귀가를 고려해 3개 이하로 구성하세요.",
         "가능하면 activityCatalog의 활동을 활용하되, purposes와 memberType에 맞게 재구성/각색해도 됩니다.",
-        "각 항목의 tags는 request.purposes 중심으로 선택하세요.",
+        "각 항목의 tags는 request.purposes의 id 중에서 선택하세요. priority가 core인 목적은 일정 전체에서 " +
+          "여러 항목에 걸쳐 확실히 드러나도록 최우선으로 반영하고, important는 가능하면, normal은 여유가 " +
+          "있을 때만 반영하세요.",
         "각 항목의 title은 지도에 찍을 수 있는 구체적인 장소 하나만 가리켜야 합니다. " +
           "'A와 B', 'A & B'처럼 서로 다른 두 장소를 한 항목에 합치지 마세요 — 그런 경우 별도 항목으로 나누세요.",
         "같은 날 안에서는 지리적으로 자연스러운 한 방향 동선이 되도록 항목을 배치하세요 " +
@@ -172,7 +171,8 @@ function groupByArea(activities: ActivityTemplate[]): { area: string; items: Act
  */
 function generateItineraryFallback(request: TripRequest, destination: DestinationProfile, days: number): PlanDay[] {
   const rng = mulberry32(hashSeed(requestSeedKey(request)));
-  const purposeFilter = request.purposes.length > 0 ? request.purposes : undefined;
+  const purposeIds = request.purposes.map((p) => p.id);
+  const purposeFilter = purposeIds.length > 0 ? purposeIds : undefined;
 
   const preferred: ActivityTemplate[] = purposeFilter
     ? destination.activities.filter((a) => a.tags.some((t) => purposeFilter.includes(t)))
@@ -238,9 +238,11 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
 }
 
 const SOURCES_PER_ITEM = 3;
-// 랭킹 대상 후보 풀 크기. 화면에 노출하는 개수(3)보다 넉넉히 받아와야 AI 랭킹이 의미가 있고,
-// 캐시에 여유 후보가 남아 있어야 같은 여행 안에서 다른 항목과 소스가 겹칠 때 대체할 수 있습니다.
+// 목업 대체 전용 풀 크기(데모용). 실제 검색은 CANDIDATE_POOL_SIZE를 씁니다.
 const SOURCE_CANDIDATE_COUNT = 6;
+// PRD §13: search.list 1회당 최대 50개 후보. 항목별로 따로 검색하지 않고, SearchPlan의
+// 쿼리(최대 3개 + 보충 1개) 결과를 여행 전체가 공유하는 후보 풀로 모읍니다.
+const CANDIDATE_POOL_SIZE = 50;
 
 function interleave(a: Source[], b: Source[]): Source[] {
   const out: Source[] = [];
@@ -256,67 +258,48 @@ function dedupeById(sources: Source[]): Source[] {
   return sources.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
 }
 
-const sourceRankingSchema = z.object({
-  selectedIds: z
-    .array(z.string())
-    .min(1)
-    .describe("candidates 중 검색어와 가장 관련 있는 순서로 정렬한 id 목록 (최대 3개)"),
-});
-
-/**
- * 후보가 넉넉할 때, 검색어와 가장 관련 있어 보이는 순서로 AI가 골라 정렬합니다. 캐시가 없을
- * 때(쿼리당 한 번)만 호출되고, 실패하면 기존 interleave 방식으로 조용히 대체합니다.
- */
-async function rankSourcesWithAI(query: string, candidates: Source[]): Promise<Source[]> {
-  try {
-    const { output } = await generateText({
-      model: SOURCE_RANKING_MODEL,
-      output: Output.object({ schema: sourceRankingSchema }),
-      system:
-        "여행 일정 항목에 붙일 유튜브 영상/블로그 글 후보 목록입니다. 검색어(장소/활동)와 가장 관련 있고 " +
-        "실제 방문·이용 정보가 담겨 있을 것 같은 순서로 상위 3개의 id를 고르세요. 제목이 검색어와 무관하거나 " +
-        "낚시성으로 보이는 항목은 제외하세요.",
-      prompt: JSON.stringify({
-        query,
-        candidates: candidates.map((c) => ({
-          id: c.id,
-          kind: c.kind,
-          title: c.title,
-          snippet: c.kind === "blog" ? c.snippet : undefined,
-          channelOrSite: c.kind === "youtube" ? c.channelName : c.siteName,
-        })),
-      }),
-    });
-
-    const byId = new Map(candidates.map((c) => [c.id, c]));
-    const picked = output.selectedIds.map((id) => byId.get(id)).filter((s): s is Source => Boolean(s));
-    if (picked.length > 0) return picked;
-  } catch (error) {
-    console.error("Source ranking with AI failed, using heuristic order:", error);
-  }
-
+/** 실제 API 키가 없거나 검색 결과가 부족할 때 채우는 목업 대체 */
+function mockBestSources(query: string, count: number): Source[] {
   const preferVideo = hashSeed(query) % 2 === 0;
-  const videos = candidates.filter((c): c is Source & { kind: "youtube" } => c.kind === "youtube");
-  const blogs = candidates.filter((c): c is Source & { kind: "blog" } => c.kind === "blog");
-  return preferVideo ? interleave(videos, blogs) : interleave(blogs, videos);
+  const videos = mockSearchYoutube(query, Math.ceil(count / 2));
+  const blogs = mockSearchBlog(query, Math.floor(count / 2) || 1);
+  const merged = preferVideo ? interleave(videos, blogs) : interleave(blogs, videos);
+  return merged.slice(0, count);
 }
 
 /**
- * 검색어(query) 기준으로 캐시를 먼저 확인하고, 없으면 유튜브/네이버를 실검색해 AI로 랭킹한 뒤
- * DB에 캐시합니다. 같은 장소를 검색하는 다른 사용자의 일정도 이 캐시를 공유하므로, 유튜브·네이버
- * API 호출 자체가 크게 줄어듭니다. 캐시는 최대 3개가 아니라 후보 풀(SOURCE_CANDIDATE_COUNT) 전체를
- * 저장해, 한 여행 안에서 다른 항목과 소스가 겹칠 때 대체 후보로 쓸 수 있게 합니다.
+ * 쿼리 하나(캐시 우선, 없으면 유튜브 search.list maxResults=50 + 네이버 블로그 실검색) 분량의
+ * 후보를 가져와 그대로(랭킹 없이) 캐시합니다. 항목별이 아니라 여행 전체에서 이 쿼리를 최대
+ * 한 번만 호출하므로, 같은 조건의 다른 사용자 일정과도 캐시를 공유합니다.
  */
-async function fetchRankedSourcePool(query: string): Promise<Source[]> {
-  const cached = await getCachedSources(query).catch((error) => {
-    console.error("source cache read failed:", error);
-    return null;
+// 락을 오래 쥐고 있으면(YouTube+Naver 왕복 시간) 다른 요청이 그만큼 기다리므로 짧게 잡고,
+// 보유자가 비정상 종료해도 이 시간이 지나면 다음 요청이 락을 넘겨받습니다.
+const SEARCH_LOCK_TTL_MS = 15_000;
+const LOCK_WAIT_POLL_MS = 400;
+const LOCK_WAIT_MAX_MS = 8_000;
+
+/** 락을 못 얻었을 때, 먼저 검색 중인 요청이 캐시를 채울 때까지 짧게 기다립니다 (PRD §10). */
+async function waitForCachedSources(query: string, maxWaitMs: number): Promise<Source[] | null> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, LOCK_WAIT_POLL_MS));
+    const cached = await getCachedSources(query).catch(() => null);
+    if (cached && cached.length > 0) return cached;
+  }
+  return null;
+}
+
+async function searchAndCache(query: string): Promise<Source[]> {
+  // YouTube는 유닛 비용이 커서 하루 상한을 넘으면 이번 쿼리는 API를 건너뛰고 네이버/목업으로만
+  // 채웁니다 (PRD §12 Rate Limiter). Naver 블로그 검색은 쿼터가 상대적으로 넉넉해 상한을 두지 않습니다.
+  const withinYoutubeBudget = await consumeYoutubeQuota().catch((error) => {
+    console.error("rate limit check failed, allowing call:", error);
+    return true;
   });
-  if (cached && cached.length > 0) return cached;
 
   const [videos, blogs] = await Promise.all([
-    fetchYoutubeVideos(query, SOURCE_CANDIDATE_COUNT),
-    fetchNaverBlogs(query, SOURCE_CANDIDATE_COUNT),
+    withinYoutubeBudget ? fetchYoutubeVideos(query, CANDIDATE_POOL_SIZE) : Promise.resolve([]),
+    fetchNaverBlogs(query, CANDIDATE_POOL_SIZE),
   ]);
 
   // 실제 API 키가 없거나 검색 결과가 아예 없으면, 다음에 실제 데이터를 다시 시도할 수 있도록
@@ -326,42 +309,54 @@ async function fetchRankedSourcePool(query: string): Promise<Source[]> {
   }
 
   const candidates = dedupeById([...videos, ...blogs]);
-  let ranked =
-    candidates.length > SOURCES_PER_ITEM
-      ? await rankSourcesWithAI(query, candidates)
-      : hashSeed(query) % 2 === 0
-        ? interleave(videos, blogs)
-        : interleave(blogs, videos);
-
-  if (ranked.length < SOURCES_PER_ITEM) {
-    ranked = [...ranked, ...mockBestSources(query, SOURCES_PER_ITEM - ranked.length)];
-  }
-
-  await saveCachedSources(query, ranked).catch((error) => console.error("source cache write failed:", error));
-  return ranked;
+  await saveCachedSources(query, candidates).catch((error) => console.error("source cache write failed:", error));
+  return candidates;
 }
 
-/** pool에서 이 여행에서 아직 안 쓴 소스를 우선으로 count개 고릅니다 (같은 소스가 여러 항목에 중복 노출되는 것을 줄임). */
-function pickUnusedSources(pool: Source[], count: number, usedIds: Set<string>): Source[] {
-  const fresh = pool.filter((s) => !usedIds.has(s.id));
-  const picked = fresh.slice(0, count);
-  if (picked.length < count) {
-    for (const s of pool) {
-      if (picked.length >= count) break;
-      if (!picked.includes(s)) picked.push(s);
-    }
+/** Pre-fetch 크론(src/app/api/cron/prefetch/route.ts)도 이 함수를 그대로 재사용해, 실제 사용자
+ * 요청과 똑같이 캐시 우선 조회 → 락 → Rate Limiter를 거칩니다. */
+export async function fetchQueryCandidates(query: string): Promise<Source[]> {
+  const cached = await getCachedSources(query).catch((error) => {
+    console.error("source cache read failed:", error);
+    return null;
+  });
+  if (cached && cached.length > 0) return cached;
+
+  // 동시에 같은 쿼리를 검색하는 다른 요청이 있으면(다른 사용자, 또는 같은 여행의 다른 쿼리와
+  // 겹치는 경우) 락을 하나만 얻게 해서 API를 중복 호출하지 않습니다.
+  const acquired = await tryAcquireSearchLock(query, SEARCH_LOCK_TTL_MS).catch((error) => {
+    console.error("search lock acquire failed, proceeding without lock:", error);
+    return true;
+  });
+
+  if (!acquired) {
+    const waited = await waitForCachedSources(query, LOCK_WAIT_MAX_MS);
+    if (waited) return waited;
+    // 기다려도 안 끝났으면(느리거나 락 보유자가 실패) 락 없이 직접 검색합니다.
+    return searchAndCache(query);
   }
-  for (const s of picked) usedIds.add(s.id);
-  return picked;
+
+  try {
+    return await searchAndCache(query);
+  } finally {
+    await releaseSearchLock(query).catch((error) => console.error("search lock release failed:", error));
+  }
 }
 
-/** 실제 API 키가 없거나 검색 상한을 넘겼을 때, 혹은 실검색 결과가 부족할 때 채우는 목업 대체 */
-function mockBestSources(query: string, count: number): Source[] {
-  const preferVideo = hashSeed(query) % 2 === 0;
-  const videos = mockSearchYoutube(query, Math.ceil(count / 2));
-  const blogs = mockSearchBlog(query, Math.floor(count / 2) || 1);
-  const merged = preferVideo ? interleave(videos, blogs) : interleave(blogs, videos);
-  return merged.slice(0, count);
+/**
+ * SearchPlan의 primaryQueries(기본 2~3개)로만 후보 풀을 모으고, 그마저도 너무 적을 때만
+ * fallbackQueries를 보충으로 태웁니다 (PRD §9/§13 — 여행 하나당 실시간 검색 최대 4회 목표).
+ */
+async function buildTripCandidatePool(plan: SearchPlan): Promise<Source[]> {
+  const primaryPools = await Promise.all(plan.primaryQueries.map(fetchQueryCandidates));
+  let combined = dedupeById(primaryPools.flat());
+
+  if (combined.length < SOURCES_PER_ITEM && plan.fallbackQueries.length > 0) {
+    const fallbackPools = await Promise.all(plan.fallbackQueries.map(fetchQueryCandidates));
+    combined = dedupeById([...combined, ...fallbackPools.flat()]);
+  }
+
+  return combined;
 }
 
 /**
@@ -382,46 +377,131 @@ async function geocodeItem(destination: DestinationProfile, title: string): Prom
   return resolveGeocodeProvider(destination.region).geocode({ destinationName: destination.name, place });
 }
 
+const PRIORITY_MATCH_BOOST: Record<PurposePriority, number> = { core: 1.3, important: 1.1, normal: 1.0 };
+
+function parseFreshnessDays(label: string): number {
+  const dayMatch = /(\d+)일/.exec(label);
+  if (dayMatch) return Number(dayMatch[1]);
+  const monthMatch = /(\d+)개월/.exec(label);
+  if (monthMatch) return Number(monthMatch[1]) * 30;
+  const yearMatch = /(\d+)년/.exec(label);
+  if (yearMatch) return Number(yearMatch[1]) * 365;
+  return 9999;
+}
+
+function freshnessScore(source: Source): number {
+  const days = parseFreshnessDays(source.publishedLabel);
+  if (days <= 30) return 1;
+  if (days <= 180) return 0.6;
+  if (days <= 365) return 0.3;
+  return 0.1;
+}
+
+function sourceText(source: Source): (string | undefined)[] {
+  return source.kind === "youtube" ? [source.title] : [source.title, source.snippet];
+}
+
+function channelOrSite(source: Source): string {
+  return source.kind === "youtube" ? source.channelName : source.siteName;
+}
+
 /**
- * 일정 항목 제목마다(같은 제목은 한 번만) 캐시 우선으로 검색해 가장 관련 있는 유튜브 영상/
- * 블로그 글을 최대 3개까지, 그리고 지도에 표시할 좌표를 붙입니다. '메콩강 보트 투어'
- * 같은 구체적인 활동명이 그대로 검색어가 되므로, 전체 여행에 대한 일반 검색 결과가
- * 아니라 그 활동에 맞는 출처/위치가 달립니다.
+ * 후보 하나가 특정 일정 항목에 얼마나 맞는지 PRD §15 가중치로 점수를 매깁니다. 항목마다
+ * 따로 검색하지 않는 대신, 여행 전체 후보 풀에서 AI 호출 없이(자체 랭킹) 항목에 맞는
+ * 순서로 골라 항목별 출처 정확도를 최대한 유지합니다.
  */
-async function attachSourcesAndLocations(destination: DestinationProfile, plan: PlanDay[]): Promise<ItineraryDay[]> {
-  const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
+function scoreSourceForItem(
+  item: PlanItem,
+  source: Source,
+  request: TripRequest,
+  usedChannels: Set<string>
+): number {
+  const text = sourceText(source);
+  const place = primaryPlaceQuery(item.title);
 
-  const sourcePoolByTitle = new Map<string, Source[]>();
-  const locationByTitle = new Map<string, GeoLocation | null>();
+  // 후보 풀 자체가 이미 목적지 이름을 포함한 쿼리로만 모은 것이라 destinationMatch는 상수입니다.
+  const destinationMatch = 1;
+  const purposeMatch =
+    item.tags.length === 0
+      ? 0.5
+      : item.tags.reduce((sum, tag) => {
+          const matched = text.some((t) => t?.includes(PURPOSE_LABELS[tag].split("·")[0]));
+          if (!matched) return sum;
+          const priority = request.purposes.find((p) => p.id === tag)?.priority ?? "normal";
+          return sum + PRIORITY_MATCH_BOOST[priority];
+        }, 0) / item.tags.length;
+  const tripStyleMatch = text.some((t) => t?.includes(request.memberType)) ? 1 : 0.3;
+  const placeMatch = text.some((t) => t?.includes(place)) ? 1 : 0;
+  const freshness = freshnessScore(source);
+  // 조회수 등 실제 참여도 지표는 아직 붙이지 않아 중립값으로 둡니다.
+  const engagement = 0.5;
+  const sourceDiversity = usedChannels.has(channelOrSite(source)) ? 0.2 : 1;
 
-  await Promise.all(
-    uniqueTitles.map(async (title, i) => {
-      const query = `${destination.name} ${title}`;
-      const withinCap = i < MAX_REAL_SOURCE_LOOKUPS;
-      // 지오코딩(네이버 지역검색/구글 Geocoding)은 유튜브 검색만큼 쿼터가 빠듯하지 않고,
-      // 지도가 일정 전체를 보여주려면 항목이 몇 개든 좌표를 다 조회해야 하므로 소스
-      // 검색과 상한을 공유하지 않습니다.
-      const [pool, location] = await Promise.all([
-        withinCap ? fetchRankedSourcePool(query) : Promise.resolve(mockBestSources(query, SOURCE_CANDIDATE_COUNT)),
-        geocodeItem(destination, title),
-      ]);
-      sourcePoolByTitle.set(title, pool);
-      locationByTitle.set(title, location);
-    })
+  return (
+    destinationMatch * 0.3 +
+    purposeMatch * 0.25 +
+    tripStyleMatch * 0.15 +
+    placeMatch * 0.15 +
+    freshness * 0.05 +
+    engagement * 0.05 +
+    sourceDiversity * 0.05
   );
+}
 
-  // 관리자가 CONTENT_MASTER 시트에서 거부 처리한 소스는 어떤 항목에도 노출하지 않습니다.
-  const rejectedSourceIds = await getRejectedSourceIds().catch((error) => {
-    console.error("moderation lookup failed:", error);
-    return new Set<string>();
-  });
+/**
+ * 여행 전체 후보 풀(candidatePool)에서 항목별로 가장 잘 맞는 소스를 최대 SOURCES_PER_ITEM개
+ * 골라 붙이고, 좌표는 항목마다 그대로 지오코딩합니다(검색 쿼터와 무관해 항목 수 제한이 없음).
+ */
+async function attachSourcesAndLocations(
+  request: TripRequest,
+  destination: DestinationProfile,
+  plan: PlanDay[]
+): Promise<ItineraryDay[]> {
+  const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
+  const itemByTitle = new Map(plan.flatMap((d) => d.items).map((it) => [it.title, it]));
 
-  // 같은 소스가 여러 항목에 중복 노출되지 않도록, 등장 순서대로 후보 풀에서 아직 안 쓴 것부터 고릅니다.
+  const searchPlan = buildSearchPlan(request, destination.name);
+  const [candidatePool, rejectedSourceIds, locationEntries] = await Promise.all([
+    buildTripCandidatePool(searchPlan),
+    getRejectedSourceIds().catch((error) => {
+      console.error("moderation lookup failed:", error);
+      return new Set<string>();
+    }),
+    Promise.all(uniqueTitles.map(async (title) => [title, await geocodeItem(destination, title)] as const)),
+  ]);
+  const locationByTitle = new Map(locationEntries);
+  const approvedPool = candidatePool.filter((s) => !rejectedSourceIds.has(s.id));
+
+  // 같은 소스가 여러 항목에 중복 노출되지 않도록, 이미 쓴 소스는 다음 항목에서 제외하고 고릅니다.
   const usedSourceIds = new Set<string>();
+  const usedChannels = new Set<string>();
   const sourcesByTitle = new Map<string, Source[]>();
+
   for (const title of uniqueTitles) {
-    const pool = sourcePoolByTitle.get(title)!.filter((s) => !rejectedSourceIds.has(s.id));
-    sourcesByTitle.set(title, pickUnusedSources(pool, SOURCES_PER_ITEM, usedSourceIds));
+    const item = itemByTitle.get(title)!;
+    const fresh = approvedPool.filter((s) => !usedSourceIds.has(s.id));
+    const ranked = fresh
+      .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.source);
+
+    const picked = ranked.slice(0, SOURCES_PER_ITEM);
+    // 후보 풀 자체가 작을 때(짧은 여행이라 원본 검색 결과가 적을 때)는 이미 쓴 후보라도 재사용합니다.
+    if (picked.length < SOURCES_PER_ITEM) {
+      for (const s of approvedPool) {
+        if (picked.length >= SOURCES_PER_ITEM) break;
+        if (!picked.includes(s)) picked.push(s);
+      }
+    }
+    if (picked.length < SOURCES_PER_ITEM) {
+      picked.push(...mockBestSources(`${destination.name} ${title}`, SOURCES_PER_ITEM - picked.length));
+    }
+
+    for (const s of picked) {
+      usedSourceIds.add(s.id);
+      usedChannels.add(channelOrSite(s));
+    }
+    sourcesByTitle.set(title, picked);
   }
 
   return plan.map((d) => ({
@@ -443,6 +523,10 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   const destination = resolveDestination(request.destination);
   const days = Math.max(1, request.nights + 1);
 
+  // 로딩 화면에서 클라이언트가 이미 같은 캐시 키로 호출해뒀을 가능성이 높으므로(/api/trip-tips),
+  // 일정 생성과 병렬로 돌려도 대부분 캐시 히트라 추가 지연이 거의 없습니다.
+  const tripTipsPromise = generateTripTips(destination.name, request.region, request.month);
+
   // 일정 하나가 통째로 fallback으로 떨어지면(특히 캐시되는 공개 예시 페이지에서) 지리적으로
   // 뒤죽박죽인 동선이 방문자에게 그대로 노출되므로, 일시적 오류(네트워크/쿼터 스파이크)에
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
@@ -463,7 +547,8 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   // 폼/챗봇에서 직접 확정한 request.region을 그대로 따릅니다.
   const resolvedDestination: DestinationProfile = { ...destination, region: request.region };
 
-  const itineraryDays = await attachSourcesAndLocations(resolvedDestination, plan);
+  const itineraryDays = await attachSourcesAndLocations(request, resolvedDestination, plan);
+  const tripTips = await tripTipsPromise;
 
   const estimatedTotalCost =
     destination.avgCostPerPersonPerNight * Math.max(1, request.nights) * Math.max(1, request.memberCount);
@@ -476,5 +561,6 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
     estimatedTotalCost,
     currency: "KRW",
     generatedAt: new Date().toISOString(),
+    tripTips,
   };
 }

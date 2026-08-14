@@ -5,7 +5,17 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { generateItinerary } from "@/lib/itinerary";
 import { createReview, deleteItinerary, saveItinerary } from "@/db/queries";
-import type { MemberType, Purpose, Region, TripRequest } from "@/lib/types";
+import type { MemberType, Region, TripRequest } from "@/lib/types";
+import { normalizeTripPurposes } from "@/lib/purposes";
+
+/** 폼의 숨은 input(purposesJson)에 담긴 값을 파싱합니다. 조작되거나 비어 있어도 조용히 빈 배열로 대체합니다. */
+function parsePurposesJson(value: FormDataEntryValue | null): unknown {
+  try {
+    return JSON.parse(String(value ?? "[]"));
+  } catch {
+    return [];
+  }
+}
 
 export async function createItineraryAction(formData: FormData) {
   const { userId } = await auth();
@@ -16,7 +26,7 @@ export async function createItineraryAction(formData: FormData) {
   const memberCount = Math.max(1, Number(formData.get("memberCount") ?? 1));
   const nights = Math.max(0, Number(formData.get("nights") ?? 2));
   const month = Math.min(12, Math.max(1, Number(formData.get("month") ?? new Date().getMonth() + 1)));
-  const purposes = formData.getAll("purposes").map(String) as Purpose[];
+  const purposes = normalizeTripPurposes(parsePurposesJson(formData.get("purposesJson")));
   const notes = String(formData.get("notes") ?? "").trim();
 
   if (!destination) {

@@ -1,5 +1,6 @@
 import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
-import type { Source } from "@/lib/types";
+import type { Source, TripTips } from "@/lib/types";
+import type { TripPurpose } from "@/lib/purposes";
 
 export const itineraries = pgTable("itineraries", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -11,10 +12,15 @@ export const itineraries = pgTable("itineraries", {
   memberCount: integer("member_count").notNull(),
   nights: integer("nights").notNull(),
   month: integer("month").notNull(),
-  purposes: jsonb("purposes").$type<string[]>().notNull(),
+  // 구버전(한글 문자열 배열)과 신버전({id, priority}[])이 섞여 있을 수 있어 조회 시
+  // normalizeTripPurposes로 정규화합니다 (src/lib/purposes.ts, src/db/queries.ts).
+  purposes: jsonb("purposes").$type<TripPurpose[]>().notNull(),
   days: jsonb("days").notNull(),
   estimatedTotalCost: integer("estimated_total_cost").notNull(),
   currency: text("currency").notNull().default("KRW"),
+  // 기후/준비물/최근 이슈 정보(로딩 중 Tip으로도 노출). 이 컬럼이 생기기 전에 저장된
+  // 기존 일정은 null이라, 조회 시 빈 값으로 대체합니다 (src/db/queries.ts).
+  tripTips: jsonb("trip_tips").$type<TripTips>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -28,6 +34,15 @@ export const sourceCache = pgTable("source_cache", {
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// 목적지+지역+월 단위로 기후/준비물/최근 이슈 AI 생성 결과를 캐싱합니다. 로딩 화면에서
+// 클라이언트가 먼저 호출(/api/trip-tips)하고, 일정 생성 서버 액션도 같은 캐시를 참조하므로
+// 보통 AI 호출 한 번으로 로딩 Tip과 완성된 일정 카드가 같은 내용을 보여줍니다 (src/lib/trip-tips.ts).
+export const tripTipsCache = pgTable("trip_tips_cache", {
+  key: text("key").primaryKey(),
+  tips: jsonb("tips").$type<TripTips>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // 관리자가 Google Sheets(CONTENT_MASTER)에서 검수한 소스(유튜브/블로그)의 승인/거부 상태.
 // sourceId는 Source.id(유튜브 videoId 또는 블로그 URL)와 같아, 여러 검색어의 캐시 결과에
 // 같은 소스가 나오더라도 하나의 판정으로 전체에 적용됩니다 (src/lib/sheets/content-sheet.ts).
@@ -35,6 +50,23 @@ export const contentModeration = pgTable("content_moderation", {
   sourceId: text("source_id").primaryKey(),
   status: text("status").notNull(), // "approved" | "rejected"
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// 같은 검색어(cacheKey)를 여러 요청이 동시에 실검색하지 않도록 거는 락 (PRD §10 Request
+// Deduplication). 별도 워커/큐 없이 요청 처리 안에서만 쓰이므로, PRD의 search_jobs +
+// search_locks 조합 대신 이 락 테이블 하나로 단순화했습니다 — expiresAt이 지나면
+// 락 보유자가 비정상 종료된 것으로 보고 다음 요청이 넘겨받습니다 (src/db/search-lock.ts).
+export const searchLocks = pgTable("search_locks", {
+  cacheKey: text("cache_key").primaryKey(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
+// 외부 API(현재는 YouTube)의 일일 호출 횟수를 세는 카운터 (PRD §12 Rate Limiter).
+// id는 `${api}::${yyyy-mm-dd}` 형태라 날짜가 바뀌면 자연히 새 행으로 리셋됩니다.
+export const apiRateLimits = pgTable("api_rate_limits", {
+  id: text("id").primaryKey(),
+  count: integer("count").notNull().default(0),
 });
 
 export const reviews = pgTable("reviews", {

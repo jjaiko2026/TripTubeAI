@@ -1,0 +1,19 @@
+name: Prefetch popular destinations
+
+# Vercel Cron 대신 GitHub Actions로 스케줄링합니다 — 호스팅을 어디로 옮기든(Vercel이든
+# 다른 곳이든) PREFETCH_URL secret만 바꾸면 그대로 동작합니다.
+on:
+  schedule:
+    # 매일 UTC 18:00 (한국시간 새벽 3시, 트래픽이 낮은 시간대)
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  prefetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call prefetch endpoint
+        run: |
+          curl -sf --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.PREFETCH_URL }}"

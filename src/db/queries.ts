@@ -1,7 +1,10 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { itineraries, reviews } from "@/db/schema";
-import type { Itinerary, ItineraryDay, Purpose, Review } from "@/lib/types";
+import type { Itinerary, ItineraryDay, Review, TripTips } from "@/lib/types";
+import { normalizeTripPurposes, PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
+
+const EMPTY_TRIP_TIPS: TripTips = { climate: "", packingList: [], recentIssues: [] };
 
 export async function saveItinerary(itinerary: Itinerary, userId: string | null) {
   const db = getDb();
@@ -20,6 +23,7 @@ export async function saveItinerary(itinerary: Itinerary, userId: string | null)
       days: itinerary.days,
       estimatedTotalCost: itinerary.estimatedTotalCost,
       currency: itinerary.currency,
+      tripTips: itinerary.tripTips,
     })
     .returning({ id: itineraries.id });
   return row.id;
@@ -85,7 +89,7 @@ export async function getItinerary(id: string): Promise<Itinerary | null> {
       memberCount: row.memberCount,
       nights: row.nights,
       month: row.month,
-      purposes: row.purposes as Purpose[],
+      purposes: normalizeTripPurposes(row.purposes),
       // notes는 생성 시점에만 쓰이고 저장하지 않으므로, 조회 시에는 빈 값으로 복원합니다.
       notes: "",
     },
@@ -95,6 +99,8 @@ export async function getItinerary(id: string): Promise<Itinerary | null> {
     estimatedTotalCost: row.estimatedTotalCost,
     currency: row.currency as Itinerary["currency"],
     generatedAt: row.createdAt.toISOString(),
+    // 이 컬럼이 생기기 전에 저장된 일정은 null이라 빈 값으로 대체합니다.
+    tripTips: (row.tripTips as TripTips | null) ?? EMPTY_TRIP_TIPS,
   };
 }
 
@@ -157,7 +163,7 @@ export async function getDashboardData(days = 30): Promise<DashboardData> {
   }
 
   const destinationCounts = new Map<string, number>();
-  const purposeCounts = new Map<string, number>();
+  const purposeCounts = new Map<PurposeId, number>();
 
   for (const row of rows) {
     const dayKey = row.createdAt.toISOString().slice(0, 10);
@@ -165,8 +171,8 @@ export async function getDashboardData(days = 30): Promise<DashboardData> {
 
     destinationCounts.set(row.destinationName, (destinationCounts.get(row.destinationName) ?? 0) + 1);
 
-    for (const purpose of row.purposes as string[]) {
-      purposeCounts.set(purpose, (purposeCounts.get(purpose) ?? 0) + 1);
+    for (const purpose of normalizeTripPurposes(row.purposes)) {
+      purposeCounts.set(purpose.id, (purposeCounts.get(purpose.id) ?? 0) + 1);
     }
   }
 
@@ -177,7 +183,7 @@ export async function getDashboardData(days = 30): Promise<DashboardData> {
       .map(([destination, count]) => ({ destination, count }))
       .sort((a, b) => b.count - a.count),
     purposeDistribution: Array.from(purposeCounts.entries())
-      .map(([name, value]) => ({ name, value }))
+      .map(([id, value]) => ({ name: PURPOSE_LABELS[id], value }))
       .sort((a, b) => b.value - a.value),
   };
 }

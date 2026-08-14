@@ -1,7 +1,8 @@
 import { tool, type InferUITool, type UIDataTypes, type UIMessage } from "ai";
 import { z } from "zod";
-import { ALL_MEMBER_TYPES, ALL_PURPOSES, type MemberType, type Purpose, type TripRequest } from "@/lib/types";
+import { ALL_MEMBER_TYPES, type MemberType, type TripRequest } from "@/lib/types";
 import { AMBIGUOUS_DESTINATIONS } from "@/lib/mock/destinations";
+import { ALL_PURPOSE_IDS, MAX_CORE_PURPOSES, PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
 
 export const TRIP_CHAT_MODEL = "google/gemini-3.6-flash";
 
@@ -15,7 +16,17 @@ export const updateTripDraftTool = tool({
     memberCount: z.number().int().min(1).max(20).optional().describe("인원 수"),
     nights: z.number().int().min(0).max(30).optional().describe("숙박 일수 (박)"),
     month: z.number().int().min(1).max(12).optional().describe("여행 시기 (월, 1~12)"),
-    purposes: z.array(z.enum(ALL_PURPOSES as [Purpose, ...Purpose[]])).optional().describe("여행 목적/테마 (복수 선택 가능)"),
+    purposes: z
+      .array(
+        z.object({
+          id: z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]]),
+          priority: z.enum(["core", "important", "normal"]).describe(
+            `이 목적이 사용자에게 얼마나 중요한지. core는 최대 ${MAX_CORE_PURPOSES}개까지만 지정 가능 (초과분은 important로).`
+          ),
+        })
+      )
+      .optional()
+      .describe("여행 목적/테마 (복수 선택 가능, 목적마다 우선순위 포함). 매번 지금까지 파악된 전체 목록을 새로 보내세요."),
     notes: z
       .string()
       .optional()
@@ -41,6 +52,10 @@ function describeAmbiguousDestinations(): string {
     .join("; ");
 }
 
+function describePurposes(): string {
+  return ALL_PURPOSE_IDS.map((id) => `${PURPOSE_LABELS[id]}(${id})`).join(", ");
+}
+
 export function buildTripChatSystemPrompt(currentDraft: TripRequest): string {
   return [
     "당신은 TripTube AI의 여행 플래너 챗봇입니다. 사용자와 자연스러운 한국어 대화를 통해 여행 조건을 파악해서, " +
@@ -53,7 +68,10 @@ export function buildTripChatSystemPrompt(currentDraft: TripRequest): string {
       "활동을 구체적으로 언급하면, 이를 반드시 notes 필드에 정리해서 담으세요. 이런 요구사항은 최종 일정을 짤 때 " +
       "다른 조건보다 우선적으로 반영되니, 놓치지 말고 최대한 구체적으로 (날짜/지역/장소명을 명시해서) 적으세요.",
     `구성원 유형은 다음 중 하나여야 합니다: ${ALL_MEMBER_TYPES.join(", ")}.`,
-    `여행 목적/테마는 다음 중에서 골라야 합니다: ${ALL_PURPOSES.join(", ")}.`,
+    `여행 목적/테마는 다음 중에서 골라야 하며, 도구 호출 시에는 괄호 안의 영문 id로 전달하세요: ${describePurposes()}.`,
+    `목적마다 사용자에게 얼마나 중요한지 priority(core/important/normal)도 함께 판단해서 전달하세요. ` +
+      `"꼭", "제일", "가장 중요한" 같은 강조 표현이 있으면 core로, 그냥 언급만 하면 normal로 두고, core는 최대 ` +
+      `${MAX_CORE_PURPOSES}개까지만 지정하세요 (그 이상 강조하면 important로).`,
     "목적지가 대한민국 국내인지 해외인지는 당신이 알고 있는 사실대로 region 필드도 함께 채우세요 (예: 하노이 → 해외).",
     `다음 지명은 이름만으로 어느 지역인지 특정할 수 없습니다: ${describeAmbiguousDestinations()}. 사용자가 이런 이름을 ` +
       "말하면 임의로 추측하지 말고 어느 지역인지 반드시 되물어서 확인한 뒤, 위에 나온 구체적인 지역명으로 확정해서 " +

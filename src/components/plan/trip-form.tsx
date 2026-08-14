@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -17,9 +17,17 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { ItineraryLoading } from "@/components/plan/itinerary-loading";
 import { createItineraryAction } from "@/lib/actions";
-import { ALL_MEMBER_TYPES, ALL_PURPOSES, type MemberType, type Purpose, type Region, type TripRequest } from "@/lib/types";
+import { ALL_MEMBER_TYPES, type MemberType, type Region, type TripRequest } from "@/lib/types";
+import {
+  ALL_PURPOSE_IDS,
+  MAX_CORE_PURPOSES,
+  PURPOSE_LABELS,
+  PURPOSE_PRIORITY_LABELS,
+  cyclePurposePriority,
+} from "@/lib/purposes";
 import { DESTINATIONS, findAmbiguousGroup } from "@/lib/mock/destinations";
 import { monthLabel } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export function TripForm({
   value,
@@ -36,7 +44,7 @@ export function TripForm({
     return (
       <Card>
         <CardContent className="pt-6">
-          <ItineraryLoading destination={value.destination} />
+          <ItineraryLoading destination={value.destination} region={value.region} month={value.month} />
         </CardContent>
       </Card>
     );
@@ -184,30 +192,34 @@ export function TripForm({
           </div>
 
           <div className="space-y-2">
-            <Label>여행 목적 (복수 선택 가능)</Label>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {ALL_PURPOSES.map((purpose) => (
-                <label
-                  key={purpose}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm has-[[data-checked]]:border-primary has-[[data-checked]]:bg-accent"
-                >
-                  <Checkbox
-                    name="purposes"
-                    value={purpose}
-                    checked={value.purposes.includes(purpose)}
-                    onCheckedChange={(checked) =>
-                      onChange({
-                        ...value,
-                        purposes: checked
-                          ? [...value.purposes, purpose]
-                          : value.purposes.filter((p: Purpose) => p !== purpose),
-                      })
-                    }
-                  />
-                  {purpose}
-                </label>
-              ))}
+            <Label>여행 목적 (눌러서 선택, 다시 누르면 중요도가 올라가요)</Label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {ALL_PURPOSE_IDS.map((id) => {
+                const current = value.purposes.find((p) => p.id === id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onChange({ ...value, purposes: cyclePurposePriority(value.purposes, id) })}
+                    className={cn(
+                      "flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                      current ? "border-primary bg-accent" : "hover:bg-accent/50"
+                    )}
+                  >
+                    <span>{PURPOSE_LABELS[id]}</span>
+                    {current && (
+                      <Badge variant={current.priority === "core" ? "default" : "secondary"} className="text-[10px]">
+                        {PURPOSE_PRIORITY_LABELS[current.priority]}
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-xs text-muted-foreground">
+              선택 → 중요 → 핵심 순으로 중요도가 올라가고, 핵심은 최대 {MAX_CORE_PURPOSES}개까지 지정할 수 있어요.
+            </p>
+            <input type="hidden" name="purposesJson" value={JSON.stringify(value.purposes)} />
           </div>
 
           <div className="space-y-2">

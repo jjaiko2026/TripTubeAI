@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from "ai";
 import { Bot, Send } from "lucide-react";
@@ -21,6 +21,7 @@ export function TripChat({
   disabled?: boolean;
 }) {
   const [input, setInput] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const { messages, sendMessage, status, error, regenerate, addToolOutput } = useChat<TripChatUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/trip-chat" }),
@@ -35,6 +36,11 @@ export function TripChat({
   });
 
   const isBusy = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, status, error]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,7 +63,7 @@ export function TripChat({
           </div>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto pr-1">
           <ChatBubble
             role="assistant"
             text="안녕하세요! 어떤 여행을 계획하고 계세요? 편하게 말씀해주시면 제가 조건을 정리해서 옆 폼에 채워드릴게요."
