@@ -24,7 +24,7 @@ import { buildSearchPlan, type SearchPlan } from "@/lib/search-plan";
 const AI_MODEL = "anthropic/claude-sonnet-5";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 
-type PlanItem = { time: string; title: string; description: string; tags: PurposeId[] };
+type PlanItem = { time: string; title: string; description: string; tags: PurposeId[]; geocodeQuery: string };
 type PlanDay = { day: number; label: string; shortLabel: string; items: PlanItem[] };
 
 function requestSeedKey(request: TripRequest) {
@@ -87,6 +87,14 @@ const planSchema = z.object({
           title: z.string(),
           description: z.string(),
           tags: z.array(z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]])).min(1),
+          geocodeQuery: z
+            .string()
+            .describe(
+              "지도 좌표 검색(지오코딩) 전용 검색어. title이 한국어 발음 표기(예: '톈즈팡', '우캉루')인 " +
+                "해외 장소는, 지도 서비스가 실제로 찾을 수 있는 현지어 또는 영문 이름으로 쓰세요 " +
+                "(예: '톈즈팡' → 'Tianzifang', '우캉루' → 'Wukang Road'). 국내이거나 title이 이미 " +
+                "지도에서 바로 찾힐 만한 정확한 상호/지명이면 title과 동일하게 써도 됩니다."
+            ),
         })
       ),
     })
@@ -177,6 +185,13 @@ async function generateItineraryWithAI(
           "있을 때만 반영하세요.",
         "각 항목의 title은 지도에 찍을 수 있는 구체적인 장소 하나만 가리켜야 합니다. " +
           "'A와 B', 'A & B'처럼 서로 다른 두 장소를 한 항목에 합치지 마세요 — 그런 경우 별도 항목으로 나누세요.",
+        request.region === "해외"
+          ? "각 항목의 geocodeQuery는 title과 별개로, 지도 서비스가 실제로 찾을 수 있는 현지어 또는 영문 " +
+            "이름으로 쓰세요. title이 한국어 발음 표기(예: '톈즈팡', '우캉루', '빈장대도')인 경우 " +
+            "geocodeQuery는 그 지역/장소의 실제 현지어나 널리 쓰이는 영문 표기로 바꿔서 쓰세요 " +
+            "(예: 'Tianzifang', 'Wukang Road', 'Binjiang Avenue'). title이 이미 지도에서 바로 찾힐 " +
+            "만한 유명 랜드마크명(예: '와이탄', 'The Bund')이면 geocodeQuery도 동일하게 써도 됩니다."
+          : "각 항목의 geocodeQuery는 국내라면 보통 title과 동일하게 쓰면 됩니다.",
         "같은 날 안에서는 지리적으로 자연스러운 한 방향 동선이 되도록 항목을 배치하세요 " +
           "(예: 서쪽에서 동쪽으로 순서대로 이동). 하루 안에서 지역을 여러 번 왔다갔다 하지 마세요.",
         days > 1
@@ -294,7 +309,13 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
 
     const items: PlanItem[] = slotsForDay.map((time, i) => {
       const activity = picked[i];
-      return { time, title: activity.title, description: activity.description, tags: activity.tags };
+      return {
+        time,
+        title: activity.title,
+        description: activity.description,
+        tags: activity.tags,
+        geocodeQuery: activity.title,
+      };
     });
 
     // 그 날 실제로 활동을 뽑아온 area 이름을 그대로 짧은 키워드로 씁니다(순서도 박스용).
@@ -316,9 +337,21 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
   const { arrival, departure } = arrivalDepartureItems(destination, arrivalMode(request, destination));
   const firstDay = planDays[0];
   const lastDay = planDays[planDays.length - 1];
-  firstDay.items[0] = { ...firstDay.items[0], title: arrival.title, description: arrival.description, tags: [] };
+  firstDay.items[0] = {
+    ...firstDay.items[0],
+    title: arrival.title,
+    description: arrival.description,
+    tags: [],
+    geocodeQuery: arrival.title,
+  };
   const lastIndex = lastDay.items.length - 1;
-  lastDay.items[lastIndex] = { ...lastDay.items[lastIndex], title: departure.title, description: departure.description, tags: [] };
+  lastDay.items[lastIndex] = {
+    ...lastDay.items[lastIndex],
+    title: departure.title,
+    description: departure.description,
+    tags: [],
+    geocodeQuery: departure.title,
+  };
 
   return planDays;
 }
@@ -460,9 +493,10 @@ function primaryPlaceQuery(title: string): string {
   return (byParticle ? byParticle[1] : bySymbol).trim() || title;
 }
 
-/** 목적지 region에 맞는 GeocodeProvider(네이버 지역검색/구글 Geocoding)로 좌표를 조회합니다. */
-async function geocodeItem(destination: DestinationProfile, title: string): Promise<GeoLocation | null> {
-  const place = primaryPlaceQuery(title);
+/** 목적지 region에 맞는 GeocodeProvider(네이버 지역검색/구글 Geocoding)로 좌표를 조회합니다.
+ *  query는 item.title이 아니라 item.geocodeQuery(지도 서비스가 찾을 수 있는 현지어/영문 이름)를 씁니다. */
+async function geocodeItem(destination: DestinationProfile, query: string): Promise<GeoLocation | null> {
+  const place = primaryPlaceQuery(query);
   return resolveGeocodeProvider(destination.region).geocode({ destinationName: destination.name, place });
 }
 
@@ -576,7 +610,12 @@ async function attachSourcesAndLocations(
       console.error("moderation lookup failed:", error);
       return new Set<string>();
     }),
-    Promise.all(uniqueTitles.map(async (title) => [title, await geocodeItem(destination, title)] as const)),
+    Promise.all(
+      uniqueTitles.map(
+        async (title) =>
+          [title, await geocodeItem(destination, itemByTitle.get(title)!.geocodeQuery || title)] as const
+      )
+    ),
   ]);
   const locationByTitle = new Map(locationEntries);
   const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
