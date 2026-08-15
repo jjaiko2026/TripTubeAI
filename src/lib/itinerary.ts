@@ -25,7 +25,7 @@ const AI_MODEL = "anthropic/claude-sonnet-5";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 
 type PlanItem = { time: string; title: string; description: string; tags: PurposeId[] };
-type PlanDay = { day: number; label: string; items: PlanItem[] };
+type PlanDay = { day: number; label: string; shortLabel: string; items: PlanItem[] };
 
 function requestSeedKey(request: TripRequest) {
   return [
@@ -73,7 +73,14 @@ const planSchema = z.object({
   days: z.array(
     z.object({
       day: z.number().int().min(1),
-      label: z.string(),
+      label: z.string().describe("그 날짜 일정을 한 문장으로 요약한 설명 (예: '다낭 도착 후 미케비치에서 여유로운 시작')."),
+      shortLabel: z
+        .string()
+        .describe(
+          "그 날짜를 대표하는 2~6글자 핵심 키워드 하나만. label 문장을 줄인 게 아니라, 그 날의 " +
+            "핵심 지역/장소명을 그대로 쓰세요 (예: '다낭 도착', '바나힐', '호이안 구시가지'). " +
+            "문장이나 조사(-에서, -을 등)로 끝나면 안 됩니다."
+        ),
       items: z.array(
         z.object({
           time: z.string(),
@@ -290,7 +297,18 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
       return { time, title: activity.title, description: activity.description, tags: activity.tags };
     });
 
-    planDays.push({ day, label: days === 1 ? "당일" : `Day ${day}`, items });
+    // 그 날 실제로 활동을 뽑아온 area 이름을 그대로 짧은 키워드로 씁니다(순서도 박스용).
+    const areaName =
+      areaGroups.length > 0
+        ? areaGroups[((areaIndex % areaGroups.length) + areaGroups.length) % areaGroups.length].area
+        : destination.name;
+
+    planDays.push({
+      day,
+      label: days === 1 ? "당일" : `Day ${day}`,
+      shortLabel: days === 1 ? destination.name : areaName,
+      items,
+    });
   }
 
   // 모든 여행은 도착으로 시작해 출발로 끝나므로, 1일차 첫 항목과 마지막 날 마지막 항목을
@@ -622,6 +640,7 @@ async function attachSourcesAndLocations(
   return plan.map((d) => ({
     day: d.day,
     label: d.label,
+    shortLabel: d.shortLabel,
     items: reorderDayItemsByGeography(
       d.items.map(
         (it): ItineraryItem => ({

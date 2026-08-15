@@ -64,6 +64,8 @@ export interface ItineraryItem {
 export interface ItineraryDay {
   day: number;
   label: string;
+  /** 순서도 박스용 2~6글자 핵심 키워드. 이 필드가 생기기 전에 저장된 일정에는 없을 수 있습니다. */
+  shortLabel?: string;
   items: ItineraryItem[];
 }
 
