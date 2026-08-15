@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, RefreshCcw } from "lucide-react";
+import { ArrowLeft, RefreshCcw, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button";
+import { WriteReviewDialog } from "@/components/reviews/write-review-dialog";
 import { getItinerary } from "@/db/queries";
 
 export default async function PlanResultPage({
@@ -42,6 +43,20 @@ export default async function PlanResultPage({
       </div>
 
       <ItineraryView itinerary={itinerary} />
+
+      <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border bg-muted/30 p-6 text-center">
+        <p className="font-medium">이 일정이 마음에 드셨나요?</p>
+        <p className="text-sm text-muted-foreground">
+          다녀오신 후 다른 여행자들을 위해 후기를 남겨주세요.
+        </p>
+        <WriteReviewDialog
+          renderAs={<Button />}
+          defaultDestination={itinerary.destinationName}
+          defaultNights={itinerary.request.nights}
+        >
+          <Star className="h-4 w-4" /> 후기 남기기
+        </WriteReviewDialog>
+      </div>
     </div>
   );
 }

@@ -17,23 +17,21 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
           {days.map((day, idx) => {
             const dayColor = colorForDay(day.day);
             return (
-              <div key={day.day} className="flex items-center gap-1">
+              <div key={day.day} className="flex items-center gap-2">
                 <a
                   href={`#day-${day.day}`}
-                  className="flex items-center gap-2 rounded-full py-1.5 pl-1.5 pr-3 text-sm font-medium text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: dayColor }}
+                  className="flex w-28 flex-col items-center gap-0.5 rounded-xl border-2 bg-card px-2 py-2.5 text-center transition-colors hover:bg-muted/40"
+                  style={{ borderColor: dayColor }}
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/25 text-xs font-bold">
-                    {day.day}
-                  </span>
-                  <span className="truncate">{day.label}</span>
+                  <span className="text-sm font-bold">{day.day}일차</span>
+                  <span className="text-xs leading-snug break-keep text-muted-foreground">{day.label}</span>
                 </a>
                 {idx < days.length - 1 && (
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                 )}
               </div>
             );
