@@ -279,15 +279,6 @@ export const AMBIGUOUS_DESTINATIONS: Record<string, AmbiguousDestinationOption[]
     { label: "마르세유", value: "마르세유" },
     { label: "스트라스부르", value: "스트라스부르" },
   ],
-  "한국": [
-    { label: "제주도", value: "제주도" },
-    { label: "부산", value: "부산" },
-    { label: "강릉", value: "강릉" },
-    { label: "여수", value: "여수" },
-    { label: "경주", value: "경주" },
-    { label: "전주", value: "전주" },
-    { label: "속초", value: "속초" },
-  ],
 };
 
 /**

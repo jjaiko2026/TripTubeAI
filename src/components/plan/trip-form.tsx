@@ -68,7 +68,13 @@ export function TripForm({
             <Select
               name="region"
               value={value.region}
-              onValueChange={(v) => onChange({ ...value, region: v as Region })}
+              onValueChange={(v) => {
+                const nextRegion = v as Region;
+                // 지역을 바꾸면 이전 지역의 여행지가 그대로 남아있지 않도록, 새 지역의
+                // 대표 여행지로 함께 갱신합니다 (예: 국내 → 해외 전환 시 "제주도"가 안 남게).
+                const nextDestination = DESTINATIONS.find((d) => d.region === nextRegion)?.name ?? "";
+                onChange({ ...value, region: nextRegion, destination: nextDestination });
+              }}
             >
               <SelectTrigger id="region" className="w-full">
                 <SelectValue />
