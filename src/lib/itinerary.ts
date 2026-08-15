@@ -43,13 +43,23 @@ function resolveDestination(name: string) {
   return findDestination(name) ?? genericDestination(name.trim() || "미정 여행지");
 }
 
+type ArrivalMode = "ferry" | "airport" | "generic";
+
+/** notes에 배/여객선 이동 언급이 있는지 확인합니다(결정론적 대체 로직 전용 — AI 경로는 notes를 직접 읽고 판단합니다). */
+function mentionsFerryTravel(notes: string): boolean {
+  return /여객선|카페리|페리|크루즈|선박|뱃길|배\s*편|배\s*타고/.test(notes);
+}
+
 /**
- * 여행의 시작/끝을 공항으로 고정할지 여부. 해외는 항상 비행기로 오가고, 국내에서도 제주도는
+ * 여행의 시작/끝을 무엇으로 고정할지. notes에 배/여객선 언급이 있으면(예: 제주도↔목포·완도,
+ * 부산↔후쿠오카 카페리) 공항보다 우선해서 항구/여객터미널로 잡습니다. 그 외엔 해외·제주도는
  * 사실상 항공편이 유일한 이동수단이라 공항이 맞지만, 강릉·경주처럼 KTX·자차로도 많이 가는
  * 국내 목적지에 공항을 강제하면 부자연스러워서 그 외 국내는 일반적인 "도착/출발"로 둡니다.
  */
-function usesAirportBookends(request: TripRequest, destination: DestinationProfile): boolean {
-  return request.region === "해외" || destination.name.includes("제주");
+function arrivalMode(request: TripRequest, destination: DestinationProfile): ArrivalMode {
+  if (mentionsFerryTravel(request.notes)) return "ferry";
+  if (request.region === "해외" || destination.name.includes("제주")) return "airport";
+  return "generic";
 }
 
 const planSchema = z.object({
@@ -90,7 +100,7 @@ async function generateItineraryWithAI(
     title: a.title,
     tags: a.tags,
   }));
-  const airportBookends = usesAirportBookends(request, destination);
+  const mode = arrivalMode(request, destination);
 
   const { output } = await generateText({
     model: AI_MODEL,
@@ -125,7 +135,7 @@ async function generateItineraryWithAI(
         days > 1
           ? `먼저 dayRegions에 1일차부터 ${days}일차까지 각 날짜가 담당할 소지역을 정하세요. ` +
             "소지역은 서로 겹치지 않게, 지리적으로 한 방향으로 이어지도록 정하세요(예: 1일차 서쪽 → " +
-            `2일차 서쪽에서 이어서 중부 → 3일차 중부에서 이어서 동쪽 → 마지막 날은 ${airportBookends ? "공항" : "도착/출발 지점"} ` +
+            `2일차 서쪽에서 이어서 중부 → 3일차 중부에서 이어서 동쪽 → 마지막 날은 ${mode === "ferry" ? "항구/여객터미널" : mode === "airport" ? "공항" : "도착/출발 지점"} ` +
             "방향으로 정리). 각 날짜의 items는 반드시 그 날짜의 dayRegions 안에 있는 장소만 골라야 합니다."
           : null,
         days > 1
@@ -135,17 +145,25 @@ async function generateItineraryWithAI(
           : null,
         "하루에 3~5개 항목을 시간 순으로 배치하세요 (time 형식: HH:MM).",
         "마지막 날은 이동/귀가를 고려해 3개 이하로 구성하세요.",
-        airportBookends
-          ? `모든 여행은 공항 도착으로 시작해서 공항 출발로 끝납니다. 1일차의 첫 항목(day 1의 첫 items)은 ` +
-            `반드시 ${destination.name}의 실제 공항 도착이어야 하고(예: '${destination.name} 국제공항 도착', ` +
-            `아는 정확한 공항명을 쓰세요), 마지막 날의 마지막 항목은 반드시 그 공항으로 이동/출발이어야 ` +
-            "합니다. 이 두 항목도 하루 3~5개(마지막 날은 3개 이하) 항목 수 안에 포함되는 것이지, 별도로 " +
-            "추가하는 게 아닙니다."
-          : `1일차의 첫 항목은 ${destination.name} 도착으로 시작하고, 마지막 날의 마지막 항목은 ` +
-            `${destination.name}에서 출발(귀가 이동)로 마무리하세요. 이 지역은 KTX·자차로도 많이 가는 곳이라 ` +
-            "공항이라고 단정하지 말고, 실제로 자연스러운 도착/출발 지점(역, 터미널 등)으로 쓰세요. 이 두 " +
-            "항목도 하루 3~5개(마지막 날은 3개 이하) 항목 수 안에 포함되는 것이지, 별도로 추가하는 게 " +
-            "아닙니다.",
+        mode === "ferry"
+          ? `모든 여행은 도착으로 시작해서 출발로 끝납니다. request.notes에 배/여객선 이동 언급이 있으니, ` +
+            `1일차의 첫 항목은 반드시 ${destination.name}의 실제 항구/여객터미널 도착이어야 하고(아는 정확한 ` +
+            `터미널명을 쓰세요, 예: '${destination.name}항 여객터미널 도착'), 마지막 날의 마지막 항목은 ` +
+            "반드시 그 터미널로 이동/출발이어야 합니다. 이 두 항목도 하루 3~5개(마지막 날은 3개 이하) 항목 " +
+            "수 안에 포함되는 것이지, 별도로 추가하는 게 아닙니다."
+          : mode === "airport"
+            ? `모든 여행은 공항 도착으로 시작해서 공항 출발로 끝납니다. 1일차의 첫 항목(day 1의 첫 items)은 ` +
+              `반드시 ${destination.name}의 실제 공항 도착이어야 하고(예: '${destination.name} 국제공항 도착', ` +
+              `아는 정확한 공항명을 쓰세요), 마지막 날의 마지막 항목은 반드시 그 공항으로 이동/출발이어야 ` +
+              "합니다. 이 두 항목도 하루 3~5개(마지막 날은 3개 이하) 항목 수 안에 포함되는 것이지, 별도로 " +
+              "추가하는 게 아닙니다."
+            : `1일차의 첫 항목은 ${destination.name} 도착으로 시작하고, 마지막 날의 마지막 항목은 ` +
+              `${destination.name}에서 출발(귀가 이동)로 마무리하세요. 이 지역은 KTX·자차로도 많이 가는 곳이라 ` +
+              "공항이라고 단정하지 말고, 실제로 자연스러운 도착/출발 지점(역, 터미널 등)으로 쓰세요. 이 두 " +
+              "항목도 하루 3~5개(마지막 날은 3개 이하) 항목 수 안에 포함되는 것이지, 별도로 추가하는 게 " +
+              "아닙니다.",
+        "단, 위 도착/출발 지점 판단보다 request.notes에 실제로 언급된 교통수단(배, 기차, 자차 등)이 있다면 " +
+          "그쪽을 항상 우선하세요 — 위 규칙은 notes에 명시가 없을 때의 기본값일 뿐입니다.",
         "가능하면 activityCatalog의 활동을 활용하되, purposes와 memberType에 맞게 재구성/각색해도 됩니다.",
         "각 항목의 tags는 request.purposes의 id 중에서 선택하세요. priority가 core인 목적은 일정 전체에서 " +
           "여러 항목에 걸쳐 확실히 드러나도록 최우선으로 반영하고, important는 가능하면, normal은 여유가 " +
@@ -185,17 +203,24 @@ function groupByArea(activities: ActivityTemplate[]): { area: string; items: Act
   return order.map((area) => ({ area, items: byArea.get(area)! }));
 }
 
-/** AI 경로와 달리 실제 공항명을 모르므로(결정론적 대체 로직), 목적지명만으로 일반적인 문구를 씁니다. */
-function arrivalDepartureItems(destination: DestinationProfile, airportBookends: boolean) {
-  return airportBookends
-    ? {
-        arrival: { title: `${destination.name} 공항 도착`, description: "공항에 도착해 입국 수속 후 이동합니다." },
-        departure: { title: `${destination.name} 공항으로 출발`, description: "공항으로 이동해 출국 수속을 밟습니다." },
-      }
-    : {
-        arrival: { title: `${destination.name} 도착`, description: "목적지에 도착해 일정을 시작합니다." },
-        departure: { title: `${destination.name}에서 출발`, description: "귀가를 위해 이동합니다." },
-      };
+/** AI 경로와 달리 실제 공항/터미널명을 모르므로(결정론적 대체 로직), 목적지명만으로 일반적인 문구를 씁니다. */
+function arrivalDepartureItems(destination: DestinationProfile, mode: ArrivalMode) {
+  if (mode === "ferry") {
+    return {
+      arrival: { title: `${destination.name} 여객터미널 도착`, description: "여객터미널에 도착해 하선 수속 후 이동합니다." },
+      departure: { title: `${destination.name} 여객터미널로 출발`, description: "여객터미널로 이동해 승선 수속을 밟습니다." },
+    };
+  }
+  if (mode === "airport") {
+    return {
+      arrival: { title: `${destination.name} 공항 도착`, description: "공항에 도착해 입국 수속 후 이동합니다." },
+      departure: { title: `${destination.name} 공항으로 출발`, description: "공항으로 이동해 출국 수속을 밟습니다." },
+    };
+  }
+  return {
+    arrival: { title: `${destination.name} 도착`, description: "목적지에 도착해 일정을 시작합니다." },
+    departure: { title: `${destination.name}에서 출발`, description: "귀가를 위해 이동합니다." },
+  };
 }
 
 /**
@@ -270,7 +295,7 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
 
   // 모든 여행은 도착으로 시작해 출발로 끝나므로, 1일차 첫 항목과 마지막 날 마지막 항목을
   // 도착/출발 항목으로 덮어씁니다(days===1이면 같은 날의 첫 항목/마지막 항목).
-  const { arrival, departure } = arrivalDepartureItems(destination, usesAirportBookends(request, destination));
+  const { arrival, departure } = arrivalDepartureItems(destination, arrivalMode(request, destination));
   const firstDay = planDays[0];
   const lastDay = planDays[planDays.length - 1];
   firstDay.items[0] = { ...firstDay.items[0], title: arrival.title, description: arrival.description, tags: [] };
