@@ -20,6 +20,7 @@ export async function saveItinerary(itinerary: Itinerary, userId: string | null)
       nights: itinerary.request.nights,
       month: itinerary.request.month,
       purposes: itinerary.request.purposes,
+      notes: itinerary.request.notes || null,
       days: itinerary.days,
       estimatedTotalCost: itinerary.estimatedTotalCost,
       currency: itinerary.currency,
@@ -74,11 +75,16 @@ export async function deleteItinerary(id: string, userId: string): Promise<void>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function getItinerary(id: string): Promise<Itinerary | null> {
+/**
+ * userId를 넘기면 본인 소유 일정일 때만 반환합니다("조건 다시 입력" 프리필처럼 다른 사람의
+ * 요청 내용을 노출하면 안 되는 조회에 사용). 결과 페이지 등 소유자 무관 조회는 생략합니다.
+ */
+export async function getItinerary(id: string, userId?: string): Promise<Itinerary | null> {
   if (!UUID_RE.test(id)) return null;
 
   const db = getDb();
-  const [row] = await db.select().from(itineraries).where(eq(itineraries.id, id)).limit(1);
+  const condition = userId ? and(eq(itineraries.id, id), eq(itineraries.userId, userId)) : eq(itineraries.id, id);
+  const [row] = await db.select().from(itineraries).where(condition).limit(1);
   if (!row) return null;
 
   return {
@@ -90,8 +96,8 @@ export async function getItinerary(id: string): Promise<Itinerary | null> {
       nights: row.nights,
       month: row.month,
       purposes: normalizeTripPurposes(row.purposes),
-      // notes는 생성 시점에만 쓰이고 저장하지 않으므로, 조회 시에는 빈 값으로 복원합니다.
-      notes: "",
+      // 이 컬럼이 생기기 전에 저장된 일정은 null이라 빈 값으로 대체합니다.
+      notes: row.notes ?? "",
     },
     destinationName: row.destinationName,
     region: row.region as Itinerary["region"],

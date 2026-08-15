@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
+import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button";
 import { getItinerary } from "@/db/queries";
 
 export default async function PlanResultPage({
@@ -17,12 +18,18 @@ export default async function PlanResultPage({
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
       <div className="mb-6 flex items-center justify-between">
-        <Button render={<Link href="/plan/new" />} variant="ghost" size="sm">
+        <Button render={<Link href={`/plan/new?editFrom=${id}`} />} variant="ghost" size="sm">
           <ArrowLeft className="h-4 w-4" /> 조건 다시 입력
         </Button>
-        <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
-          <RefreshCcw className="h-4 w-4" /> 새 일정 만들기
-        </Button>
+        <div className="flex items-center gap-2">
+          <ItineraryPdfButton
+            targetId="itinerary-printable"
+            fileName={`${itinerary.destinationName}_여행일정.pdf`}
+          />
+          <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
+            <RefreshCcw className="h-4 w-4" /> 새 일정 만들기
+          </Button>
+        </div>
       </div>
 
       <div className="mb-6">

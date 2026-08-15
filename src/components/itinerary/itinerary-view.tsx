@@ -14,7 +14,7 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
   const { request } = itinerary;
 
   return (
-    <div className="space-y-8">
+    <div id="itinerary-printable" className="space-y-8">
       <TripTipsCard tripTips={itinerary.tripTips} />
 
       <Card>
@@ -47,7 +47,9 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
         )}
       </Card>
 
-      <Card>
+      {/* 지도는 외부 SDK가 그리는 이미지라 html2canvas로 캡처 시 캔버스가 오염돼 PDF 생성이
+          깨질 수 있어, PDF 출력에서는 이 카드를 건너뜁니다 (itinerary-pdf-button.tsx). */}
+      <Card data-pdf-exclude="true">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Route className="h-4 w-4 text-primary" />

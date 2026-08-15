@@ -2,15 +2,23 @@ import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { TripPlanner } from "@/components/plan/trip-planner";
 import { RecentItineraries } from "@/components/plan/recent-itineraries";
-import { getRecentItinerariesForUser } from "@/db/queries";
+import { getItinerary, getRecentItinerariesForUser } from "@/db/queries";
 
-export default async function PlanNewPage() {
+export default async function PlanNewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ editFrom?: string }>;
+}) {
   const { userId } = await auth();
   if (!userId) {
     redirect("/plan/example?login=required");
   }
 
-  const recentItineraries = await getRecentItinerariesForUser(userId, 3);
+  const { editFrom } = await searchParams;
+  const [recentItineraries, editItinerary] = await Promise.all([
+    getRecentItinerariesForUser(userId, 3),
+    editFrom ? getItinerary(editFrom, userId) : Promise.resolve(null),
+  ]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
@@ -26,7 +34,7 @@ export default async function PlanNewPage() {
           </p>
         </div>
       </div>
-      <TripPlanner />
+      <TripPlanner initialValue={editItinerary?.request} />
     </div>
   );
 }

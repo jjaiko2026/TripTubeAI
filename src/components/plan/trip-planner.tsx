@@ -6,8 +6,8 @@ import { TripForm } from "@/components/plan/trip-form";
 import { defaultTripRequest } from "@/lib/plan-defaults";
 import type { TripRequest } from "@/lib/types";
 
-export function TripPlanner() {
-  const [draft, setDraft] = useState<TripRequest>(defaultTripRequest);
+export function TripPlanner({ initialValue }: { initialValue?: TripRequest }) {
+  const [draft, setDraft] = useState<TripRequest>(() => initialValue ?? defaultTripRequest());
   const [isPending, startTransition] = useTransition();
 
   return (

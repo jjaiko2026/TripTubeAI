@@ -15,6 +15,10 @@ export const itineraries = pgTable("itineraries", {
   // 구버전(한글 문자열 배열)과 신버전({id, priority}[])이 섞여 있을 수 있어 조회 시
   // normalizeTripPurposes로 정규화합니다 (src/lib/purposes.ts, src/db/queries.ts).
   purposes: jsonb("purposes").$type<TripPurpose[]>().notNull(),
+  // 특정 날짜 지역 지정, 꼭 가고 싶은 장소 등 사용자가 입력한 자유 텍스트 요청사항.
+  // "조건 다시 입력" 시 폼을 이전 값으로 복원하기 위해 저장합니다 (src/app/plan/new/page.tsx).
+  // 이 컬럼이 생기기 전에 저장된 일정은 null이라, 조회 시 빈 값으로 대체합니다 (src/db/queries.ts).
+  notes: text("notes"),
   days: jsonb("days").notNull(),
   estimatedTotalCost: integer("estimated_total_cost").notNull(),
   currency: text("currency").notNull().default("KRW"),
