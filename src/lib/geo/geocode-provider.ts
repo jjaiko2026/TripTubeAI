@@ -16,7 +16,7 @@ const naverGeocodeProvider: GeocodeProvider = {
 const googleGeocodeProvider: GeocodeProvider = {
   id: "google",
   geocode({ destinationName, place }) {
-    return geocodeGoogle(`${destinationName} ${place}`);
+    return geocodeGoogle(destinationName, place);
   },
 };
 

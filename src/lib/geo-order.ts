@@ -69,17 +69,60 @@ function optimizeLocationOrder(points: GeoLocation[]): number[] {
   return route;
 }
 
+const DWELL_MINUTES = 90;
+const MINUTES_PER_KM = 3; // 약 시속 20km 블렌디드(도보+택시/대중교통) 이동 속도 가정
+const TRAVEL_MIN_FLOOR_MINUTES = 10;
+const TRAVEL_MAX_CAP_MINUTES = 120;
+// 좌표가 없어 실거리를 못 구하는 구간(둘 중 하나라도 좌표 없음)에 쓰는 기본 이동 시간.
+const DEFAULT_TRAVEL_MINUTES = 20;
+
+function parseTimeToMinutes(time: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function formatMinutesToTime(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.min(23, Math.floor(clamped / 60));
+  const minutes = clamped % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function travelMinutesBetween(a: GeoLocation | null, b: GeoLocation | null): number {
+  if (!a || !b) return DEFAULT_TRAVEL_MINUTES;
+  const km = haversineDistance(a, b);
+  return Math.min(TRAVEL_MAX_CAP_MINUTES, Math.max(TRAVEL_MIN_FLOOR_MINUTES, Math.round(km * MINUTES_PER_KM)));
+}
+
+/**
+ * 화면에 보이는 순서(동선)에 맞춰 시각을 다시 계산합니다. 첫 항목의 시각(하루 시작)만 그대로
+ * 두고, 이후 각 항목은 이전 항목에서의 체류 시간(DWELL_MINUTES)과 다음 지점까지 실제 거리
+ * 기반 이동 시간을 더해 정합니다. 지리적으로 재배열한 뒤에도 AI가 원래 배정한 시각을 그대로
+ * 재사용하면(단순 오름차순 재배분) 동선과 안 맞는 시간 간격이 나올 수 있어, 매번 새로 계산합니다.
+ */
+function rescheduleByDistance(items: ItineraryItem[]): ItineraryItem[] {
+  if (items.length === 0) return items;
+
+  let cursor = parseTimeToMinutes(items[0].time) ?? 9 * 60;
+
+  return items.map((item, i) => {
+    if (i === 0) return { ...item, time: formatMinutesToTime(cursor) };
+    cursor += DWELL_MINUTES + travelMinutesBetween(items[i - 1].location, item.location);
+    return { ...item, time: formatMinutesToTime(cursor) };
+  });
+}
+
 /**
  * 하루 안에서 좌표가 있는 항목들의 순서를 지리적으로 자연스러운 동선에 가깝게 재배열합니다.
- * 좌표 없는 항목은 원래 위치를 유지합니다. AI가 시간순으로 부여한 time 값은 재정렬된
- * 순서에 맞춰 오름차순으로 다시 배분해, 화면상 시간 표기가 뒤죽박죽 보이지 않게 합니다.
+ * 좌표 없는 항목은 원래 위치를 유지합니다.
  */
 export function reorderDayItemsByGeography(items: ItineraryItem[]): ItineraryItem[] {
   const locatedIdx = items
     .map((it, i) => (it.location ? i : -1))
     .filter((i): i is number => i >= 0);
 
-  if (locatedIdx.length < 3) return items;
+  if (locatedIdx.length < 3) return rescheduleByDistance(items);
 
   const points = locatedIdx.map((i) => items[i].location!);
   const order = optimizeLocationOrder(points);
@@ -89,6 +132,5 @@ export function reorderDayItemsByGeography(items: ItineraryItem[]): ItineraryIte
     result[locatedIdx[newPos]] = items[locatedIdx[originalPos]];
   });
 
-  const timesAscending = items.map((it) => it.time).sort();
-  return result.map((it, i) => ({ ...it, time: timesAscending[i] }));
+  return rescheduleByDistance(result);
 }

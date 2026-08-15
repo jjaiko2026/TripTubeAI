@@ -90,8 +90,7 @@ function isLocalityLevelOnly(result: GoogleGeocodeResult): boolean {
   return types.length > 0 && types.every((t) => LOCALITY_LEVEL_TYPES.has(t));
 }
 
-/** 해외 좌표: Google Geocoding API. */
-export async function geocodeGoogle(query: string): Promise<GeoLocation | null> {
+async function geocodeGoogleRaw(query: string): Promise<GeoLocation | null> {
   if (!GOOGLE_GEOCODING_API_KEY) return null;
 
   const controller = new AbortController();
@@ -118,4 +117,22 @@ export async function geocodeGoogle(query: string): Promise<GeoLocation | null> 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * 해외 좌표: Google Geocoding API. Geocoding은 주소용이라 "미케비치에서 일몰 감상"처럼
+ * 뒤에 활동 묘사가 붙으면 도시 단위로만 뭉뚱그려 매칭되기 쉽습니다(그래서 걸러짐).
+ * 네이버 지역검색과 같은 방식으로, 뒤에서부터 단어를 하나씩 줄여가며 핵심 장소명만 남을
+ * 때까지 재시도합니다.
+ */
+export async function geocodeGoogle(destinationName: string, title: string): Promise<GeoLocation | null> {
+  const words = title.split(/\s+/).filter(Boolean);
+
+  for (let len = words.length; len >= 1; len--) {
+    const query = `${destinationName} ${words.slice(0, len).join(" ")}`;
+    const result = await geocodeGoogleRaw(query);
+    if (result) return result;
+  }
+
+  return null;
 }
