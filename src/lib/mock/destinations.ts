@@ -256,6 +256,22 @@ export const AMBIGUOUS_DESTINATIONS: Record<string, AmbiguousDestinationOption[]
     { label: "호이안", value: "호이안" },
     { label: "달랏", value: "달랏" },
   ],
+  "대만": [
+    { label: "타이베이", value: "타이베이" },
+    { label: "가오슝", value: "가오슝" },
+    { label: "타이중", value: "타이중" },
+    { label: "타이난", value: "타이난" },
+    { label: "화롄", value: "화롄" },
+    { label: "컨딩", value: "컨딩" },
+  ],
+  "중국": [
+    { label: "상하이", value: "상하이" },
+    { label: "베이징", value: "베이징" },
+    { label: "청두", value: "청두" },
+    { label: "시안", value: "시안" },
+    { label: "광저우", value: "광저우" },
+    { label: "항저우", value: "항저우" },
+  ],
   "일본": [
     { label: "도쿄", value: "도쿄" },
     { label: "오사카", value: "오사카" },
