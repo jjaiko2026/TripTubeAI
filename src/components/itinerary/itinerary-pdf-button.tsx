@@ -75,7 +75,11 @@ async function captureStacked(
 
   let y = 0;
   for (const c of canvases) {
-    ctx.drawImage(c, 0, y);
+    // 캡처된 블록마다 실제 폭이 다를 수 있어(제목은 강제 폭 820px, 카드들은 페이지 컨테이너
+    // 폭), 항상 왼쪽으로 그리면 폭이 좁은 블록이 전체적으로 왼쪽에 쏠려 보입니다. 합성 캔버스
+    // 폭 기준으로 가운데 정렬해서 그립니다.
+    const x = (width - c.width) / 2;
+    ctx.drawImage(c, x, y);
     y += c.height + gapPx;
   }
   return composite;
