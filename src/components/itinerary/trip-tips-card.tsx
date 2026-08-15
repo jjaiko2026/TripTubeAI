@@ -12,7 +12,7 @@ export function TripTipsCard({ tripTips }: { tripTips: TripTips }) {
   if (!hasClimate && !hasPacking && !hasIssues) return null;
 
   return (
-    <Card>
+    <Card className="border shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <CloudSun className="h-4 w-4 text-primary" />

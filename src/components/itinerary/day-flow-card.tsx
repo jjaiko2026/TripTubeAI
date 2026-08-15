@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { ChevronRight, Workflow } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { colorForDay } from "@/lib/day-colors";
@@ -28,7 +29,7 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
   const rows = chunk(days, ROW_SIZE);
 
   return (
-    <Card data-pdf-page="summary">
+    <Card data-pdf-page="summary" className="border shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Workflow className="h-4 w-4 text-primary" />
@@ -42,7 +43,7 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
               {row.map((day, idx) => {
                 const dayColor = colorForDay(day.day);
                 return (
-                  <div key={day.day} className="flex items-center gap-2">
+                  <Fragment key={day.day}>
                     <a
                       href={`#day-${day.day}`}
                       className="flex h-16 w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-colors hover:bg-muted/40"
@@ -56,7 +57,7 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
                     {idx < row.length - 1 && (
                       <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                     )}
-                  </div>
+                  </Fragment>
                 );
               })}
             </div>
