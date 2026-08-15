@@ -33,6 +33,21 @@ function drawFittedToPage(pdf: import("jspdf").jsPDF, canvas: HTMLCanvasElement)
   pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, MARGIN_MM, widthMm, heightMm);
 }
 
+/** PDF 1페이지 맨 위에만 들어가는 제목. 일정 화면(일정 만들기 결과 페이지)에는 노출하지
+ *  않으므로 화면 DOM에 넣지 않고, 캡처 직전에만 화면 밖(위쪽 멀리)에 임시로 렌더링해
+ *  html2canvas로 찍은 뒤 바로 제거합니다. */
+function createOffscreenTitleElement(titleText: string): HTMLElement {
+  const el = document.createElement("h2");
+  el.textContent = titleText;
+  el.setAttribute("aria-hidden", "true");
+  el.style.position = "fixed";
+  el.style.top = "-10000px";
+  el.style.left = "0";
+  el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
+  el.className = "text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl";
+  return el;
+}
+
 /** 서로 떨어져 있는 여러 블록(예: 요약 카드 + 알아두면 좋은 정보 + 일자별 순서도)을 각각
  *  따로 캡처한 뒤 세로로 이어 붙여, 한 페이지에 함께 들어갈 하나의 이미지로 합칩니다. */
 async function captureStacked(
@@ -66,41 +81,56 @@ async function captureStacked(
   return composite;
 }
 
-async function generatePdfBlob(targetId: string): Promise<Blob | null> {
+async function generatePdfBlob(targetId: string, titleText: string): Promise<Blob | null> {
   const container = document.getElementById(targetId);
   if (!container) return null;
 
-  // 1페이지: 여행지 정보 + 알아두면 좋은 정보 + 일자별 순서도(모두 data-pdf-page="summary").
-  // 2페이지부터: 하루 일정당 한 페이지. 지도 카드처럼 위 셀렉터에 해당하지 않는 블록은
-  // PDF에서 자연히 빠집니다.
+  // 1페이지: 제목 + 여행지 정보 + 알아두면 좋은 정보 + 일자별 순서도(모두
+  // data-pdf-page="summary", 제목은 화면 밖 임시 요소). 2페이지부터: 하루 일정당 한 페이지.
+  // 지도 카드처럼 위 셀렉터에 해당하지 않는 블록은 PDF에서 자연히 빠집니다.
   const summaryEls = Array.from(container.querySelectorAll<HTMLElement>('[data-pdf-page="summary"]'));
   const dayEls = Array.from(container.querySelectorAll<HTMLElement>("[data-pdf-day]"));
   const trailingEls = Array.from(container.querySelectorAll<HTMLElement>("[data-pdf-section]"));
-
-  const pageGroups: HTMLElement[][] = [
-    ...(summaryEls.length > 0 ? [summaryEls] : []),
-    ...dayEls.map((el) => [el]),
-    ...trailingEls.map((el) => [el]),
-  ];
-  if (pageGroups.length === 0) return null;
 
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import("html2canvas-pro"),
     import("jspdf"),
   ]);
 
-  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const titleEl = createOffscreenTitleElement(titleText);
+  document.body.appendChild(titleEl);
 
-  for (let i = 0; i < pageGroups.length; i++) {
-    const canvas = await captureStacked(html2canvas, pageGroups[i]);
-    if (i > 0) pdf.addPage();
-    drawFittedToPage(pdf, canvas);
+  try {
+    const pageGroups: HTMLElement[][] = [
+      [titleEl, ...summaryEls],
+      ...dayEls.map((el) => [el]),
+      ...trailingEls.map((el) => [el]),
+    ];
+    if (pageGroups.length === 0) return null;
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    for (let i = 0; i < pageGroups.length; i++) {
+      const canvas = await captureStacked(html2canvas, pageGroups[i]);
+      if (i > 0) pdf.addPage();
+      drawFittedToPage(pdf, canvas);
+    }
+
+    return pdf.output("blob");
+  } finally {
+    titleEl.remove();
   }
-
-  return pdf.output("blob");
 }
 
-export function ItineraryPdfButton({ targetId, fileName }: { targetId: string; fileName: string }) {
+export function ItineraryPdfButton({
+  targetId,
+  fileName,
+  title,
+}: {
+  targetId: string;
+  fileName: string;
+  title: string;
+}) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -119,7 +149,7 @@ export function ItineraryPdfButton({ targetId, fileName }: { targetId: string; f
     setIsGenerating(true);
     setError(false);
     try {
-      const blob = await generatePdfBlob(targetId);
+      const blob = await generatePdfBlob(targetId, title);
       if (!blob) {
         setError(true);
         return;

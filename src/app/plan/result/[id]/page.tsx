@@ -6,6 +6,7 @@ import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button";
 import { WriteReviewDialog } from "@/components/reviews/write-review-dialog";
 import { getItinerary } from "@/db/queries";
+import { monthLabel } from "@/lib/format";
 
 export default async function PlanResultPage({
   params,
@@ -15,6 +16,11 @@ export default async function PlanResultPage({
   const { id } = await params;
   const itinerary = await getItinerary(id);
   if (!itinerary) notFound();
+
+  const { request } = itinerary;
+  const pdfTitle =
+    `TripTubeAI와 함께하는 ${itinerary.destinationName} ${monthLabel(request.month)} ` +
+    `${request.nights}박 ${request.nights + 1}일 여행 일정표`;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -26,6 +32,7 @@ export default async function PlanResultPage({
           <ItineraryPdfButton
             targetId="itinerary-printable"
             fileName={`${itinerary.destinationName}_여행일정.pdf`}
+            title={pdfTitle}
           />
           <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
             <RefreshCcw className="h-4 w-4" /> 새 일정 만들기

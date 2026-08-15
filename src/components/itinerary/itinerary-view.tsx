@@ -20,11 +20,6 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
           일자별 순서도(DayFlowCard)도 화면상 위치는 지도 아래지만 같은 마커로 1페이지에
           포함됩니다(itinerary-pdf-button.tsx). */}
       <div data-pdf-page="summary" className="space-y-8">
-        <h2 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">
-          TripTubeAI와 함께하는 {itinerary.destinationName} {monthLabel(request.month)}. {request.nights}박{" "}
-          {request.nights + 1}일 여행 일정표
-        </h2>
-
         <Card className="border shadow-md">
           <CardContent className="grid gap-4 pt-6 sm:grid-cols-4">
             <SummaryStat icon={<MapPin className="h-4 w-4" />} label="여행지" value={itinerary.destinationName} />
