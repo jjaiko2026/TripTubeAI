@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { SourceCard, SourceReferenceLink } from "@/components/itinerary/source-card";
+import { SourceCard } from "@/components/itinerary/source-card";
 import { cn } from "@/lib/utils";
 import type { ItineraryItem } from "@/lib/types";
 import { purposeLabel } from "@/lib/purposes";
@@ -68,15 +68,10 @@ export function ItineraryItemCard({
             ))}
           </div>
           {item.sources.length > 0 && (
-            <div className="space-y-1.5">
-              <SourceCard source={item.sources[0]} />
-              {item.sources.length > 1 && (
-                <div className="space-y-1 pl-1">
-                  {item.sources.slice(1).map((source) => (
-                    <SourceReferenceLink key={source.id} source={source} />
-                  ))}
-                </div>
-              )}
+            <div className="grid grid-cols-3 gap-1.5">
+              {item.sources.map((source) => (
+                <SourceCard key={source.id} source={source} />
+              ))}
             </div>
           )}
         </div>

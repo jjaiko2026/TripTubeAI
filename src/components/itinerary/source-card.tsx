@@ -1,26 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ExternalLink, Newspaper, SquarePlay } from "lucide-react";
+import { Newspaper, SquarePlay } from "lucide-react";
 import type { Source } from "@/lib/types";
-
-/** 메인 출처 아래에 붙는 보조 참조 링크 (2~3번째 소스). */
-export function SourceReferenceLink({ source }: { source: Source }) {
-  return (
-    <Link
-      href={source.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary hover:underline"
-    >
-      {source.kind === "youtube" ? (
-        <SquarePlay className="h-3 w-3 shrink-0" />
-      ) : (
-        <Newspaper className="h-3 w-3 shrink-0" />
-      )}
-      <span className="truncate">{source.title}</span>
-    </Link>
-  );
-}
 
 const THUMB_GRADIENTS = [
   "from-teal-500 to-emerald-500",
@@ -36,70 +17,58 @@ function gradientFor(id: string) {
   return THUMB_GRADIENTS[sum % THUMB_GRADIENTS.length];
 }
 
+/** 출처 하나를 썸네일(위)+정보(아래) 세로 카드로 보여줍니다. 3개까지 3열 그리드로 나란히 씁니다. */
 export function SourceCard({ source }: { source: Source }) {
-  if (source.kind === "youtube") {
-    return (
-      <Link
-        href={source.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group flex gap-3 rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40"
-      >
-        <div className="relative flex h-16 w-28 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
-          {source.thumbnailUrl ? (
-            <Image
-              src={source.thumbnailUrl}
-              alt=""
-              fill
-              sizes="112px"
-              className="object-cover"
-            />
-          ) : (
-            <div
-              className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${gradientFor(
-                source.id
-              )}`}
-            >
-              <SquarePlay className="h-6 w-6 text-white/90" />
-            </div>
-          )}
-          <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
-            {source.durationLabel}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1 py-0.5">
-          <p className="line-clamp-2 text-sm font-medium leading-snug group-hover:text-primary">
-            {source.title}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {source.channelName} · {source.publishedLabel}
-          </p>
-        </div>
-        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-      </Link>
-    );
-  }
+  const isVideo = source.kind === "youtube";
 
   return (
     <Link
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group flex gap-3 rounded-lg border bg-card p-2 transition-colors hover:border-primary/50 hover:bg-accent/40"
+      className="group flex flex-col overflow-hidden rounded-lg border bg-card transition-colors hover:border-primary/50 hover:bg-accent/40"
     >
-      <div className="flex h-16 w-28 shrink-0 items-center justify-center rounded-md border bg-muted">
-        <Newspaper className="h-6 w-6 text-muted-foreground" />
+      <div className="relative aspect-video w-full shrink-0 overflow-hidden bg-muted">
+        {isVideo && source.thumbnailUrl ? (
+          <Image
+            src={source.thumbnailUrl}
+            alt=""
+            fill
+            sizes="(max-width: 640px) 33vw, 160px"
+            className="object-cover"
+          />
+        ) : (
+          <div
+            className={
+              isVideo
+                ? `flex h-full w-full items-center justify-center bg-gradient-to-br ${gradientFor(source.id)}`
+                : "flex h-full w-full items-center justify-center"
+            }
+          >
+            {isVideo ? (
+              <SquarePlay className="h-6 w-6 text-white/90" />
+            ) : (
+              <Newspaper className="h-6 w-6 text-muted-foreground" />
+            )}
+          </div>
+        )}
+        {isVideo && (
+          <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
+            {source.durationLabel}
+          </span>
+        )}
       </div>
-      <div className="min-w-0 flex-1 py-0.5">
-        <p className="line-clamp-2 text-sm font-medium leading-snug group-hover:text-primary">
-          {source.title}
-        </p>
-        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{source.snippet}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {source.siteName} · {source.publishedLabel}
+      <div className="flex min-w-0 flex-1 flex-col gap-1 p-2">
+        <p className="line-clamp-2 text-xs font-medium leading-snug group-hover:text-primary">{source.title}</p>
+        <p className="mt-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+          {isVideo ? (
+            <SquarePlay className="h-2.5 w-2.5 shrink-0" />
+          ) : (
+            <Newspaper className="h-2.5 w-2.5 shrink-0" />
+          )}
+          <span className="truncate">{isVideo ? source.channelName : source.siteName}</span>
         </p>
       </div>
-      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
     </Link>
   );
 }
