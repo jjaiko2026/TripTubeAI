@@ -92,7 +92,7 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
         })}
       </div>
 
-      <p className="text-center text-xs text-muted-foreground">
+      <p data-pdf-section className="text-center text-xs text-muted-foreground">
         * 본 일정은 AI가 최근 1년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를
         다시 확인해 주세요.
       </p>
