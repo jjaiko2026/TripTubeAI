@@ -24,10 +24,7 @@ export function ItineraryItemCard({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div
-      data-pdf-section
-      className="overflow-hidden rounded-lg border bg-card transition-colors hover:border-primary/40"
-    >
+    <div className="overflow-hidden rounded-lg border bg-card transition-colors hover:border-primary/40">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
