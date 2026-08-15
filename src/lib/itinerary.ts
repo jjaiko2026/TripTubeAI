@@ -240,9 +240,12 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
 const SOURCES_PER_ITEM = 3;
 // 목업 대체 전용 풀 크기(데모용). 실제 검색은 CANDIDATE_POOL_SIZE를 씁니다.
 const SOURCE_CANDIDATE_COUNT = 6;
-// PRD §13: search.list 1회당 최대 50개 후보. 항목별로 따로 검색하지 않고, SearchPlan의
-// 쿼리(최대 3개 + 보충 1개) 결과를 여행 전체가 공유하는 후보 풀로 모읍니다.
+// PRD §13: search.list 1회당 최대 50개 후보. SearchPlan의 쿼리(최대 3개 + 보충 1개)는 장소
+// 전용 검색이 못 찾았을 때만 쓰는 여행 전체 공유 보충 풀입니다.
 const CANDIDATE_POOL_SIZE = 50;
+// 장소 전용 검색은 항목마다 실시간 호출 1회이므로, 아주 긴 일정(폼상 최대 30박)에서도 한 번에
+// 너무 많은 동시 호출이 나가지 않도록 상한을 둡니다. 초과분은 2단계(넓히기)로 커버합니다.
+const MAX_PLACE_SEARCH_QUERIES = 30;
 
 function interleave(a: Source[], b: Source[]): Source[] {
   const out: Source[] = [];
@@ -453,8 +456,13 @@ function scoreSourceForItem(
   );
 }
 
+/** 장소 전용 검색 쿼리. geocodeItem과 같은 형식(목적지+장소)을 써서 캐시를 공유합니다. */
+function placeSearchQuery(destination: DestinationProfile, place: string): string {
+  return `${destination.name} ${place}`;
+}
+
 /**
- * 여행 전체 후보 풀(candidatePool)에서 항목별로 가장 잘 맞는 소스를 최대 SOURCES_PER_ITEM개
+ * 항목별로 그 장소 자체를 검색어로 쓴 전용 풀에서 가장 잘 맞는 소스를 최대 SOURCES_PER_ITEM개
  * 골라 붙이고, 좌표는 항목마다 그대로 지오코딩합니다(검색 쿼터와 무관해 항목 수 제한이 없음).
  */
 async function attachSourcesAndLocations(
@@ -464,9 +472,19 @@ async function attachSourcesAndLocations(
 ): Promise<ItineraryDay[]> {
   const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
   const itemByTitle = new Map(plan.flatMap((d) => d.items).map((it) => [it.title, it]));
+  const placeByTitle = new Map(uniqueTitles.map((title) => [title, primaryPlaceQuery(title)] as const));
+  const uniquePlaces = Array.from(new Set(placeByTitle.values())).slice(0, MAX_PLACE_SEARCH_QUERIES);
 
+  // 넓은 목적지+목적 쿼리(searchPlan)는 장소 전용 검색이 아예 못 찾았을 때만 쓰는 최후
+  // 보충용으로 남겨둡니다 — 이 풀만으로 항목을 채우면 "탕롱수상인형극장"처럼 구체적인 항목에
+  // "직장인 해외여행 추천"류 무관한 콘텐츠가 붙는 문제가 생기기 때문입니다.
   const searchPlan = buildSearchPlan(request, destination.name);
-  const [candidatePool, rejectedSourceIds, locationEntries] = await Promise.all([
+  const [placePoolEntries, fallbackPool, rejectedSourceIds, locationEntries] = await Promise.all([
+    Promise.all(
+      uniquePlaces.map(
+        async (place) => [place, await fetchQueryCandidates(placeSearchQuery(destination, place))] as const
+      )
+    ),
     buildTripCandidatePool(searchPlan),
     getRejectedSourceIds().catch((error) => {
       console.error("moderation lookup failed:", error);
@@ -475,45 +493,47 @@ async function attachSourcesAndLocations(
     Promise.all(uniqueTitles.map(async (title) => [title, await geocodeItem(destination, title)] as const)),
   ]);
   const locationByTitle = new Map(locationEntries);
-  const approvedPool = candidatePool.filter((s) => !rejectedSourceIds.has(s.id));
+  const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
+  const approvedFallbackPool = fallbackPool.filter((s) => !rejectedSourceIds.has(s.id));
 
   // 같은 소스가 여러 항목에 중복 노출되지 않도록, 이미 쓴 소스는 다음 항목에서 제외하고 고릅니다.
   const usedSourceIds = new Set<string>();
   const usedChannels = new Set<string>();
   const sourcesByTitle = new Map<string, Source[]>();
 
-  // 1단계: 모든 항목에 "그 장소를 실제로 언급하는" 소스만 먼저 배정합니다. 항목 하나가
-  // 부족하다고 바로 다른 지역 소스로 채우면, 뒤 순서 항목이 가질 수 있었던 정확한 소스를
-  // 먼저 가로챌 수 있으므로, 넓혀서 채우는 건 전체 항목의 정확 매칭이 끝난 뒤(2단계)로 미룹니다.
+  // 1단계: 모든 항목에 그 장소 전용 검색 결과부터 배정합니다. 항목 하나가 부족하다고 바로
+  // 다른 곳 소스로 채우면 뒤 순서 항목이 가질 수 있었던 정확한 소스를 먼저 가로챌 수 있으므로,
+  // 넓혀서 채우는 건 전체 항목의 장소 전용 배정이 끝난 뒤(2단계)로 미룹니다.
   const shortTitles: string[] = [];
   for (const title of uniqueTitles) {
     const item = itemByTitle.get(title)!;
-    const place = primaryPlaceQuery(title);
-    const exactMatches = approvedPool
-      .filter((s) => !usedSourceIds.has(s.id) && isPlaceMatch(s, place))
+    const place = placeByTitle.get(title)!;
+    const placePool = poolByPlace.get(place) ?? [];
+    const picked = placePool
+      .filter((s) => !usedSourceIds.has(s.id))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
       .map((r) => r.source)
       .slice(0, SOURCES_PER_ITEM);
 
-    for (const s of exactMatches) {
+    for (const s of picked) {
       usedSourceIds.add(s.id);
       usedChannels.add(channelOrSite(s));
     }
-    sourcesByTitle.set(title, exactMatches);
-    if (exactMatches.length < SOURCES_PER_ITEM) shortTitles.push(title);
+    sourcesByTitle.set(title, picked);
+    if (picked.length < SOURCES_PER_ITEM) shortTitles.push(title);
   }
 
-  // 2단계: 정확 매칭만으로 못 채운 항목만, 목적지 전체 후보 풀(같은 도시/지역 범위)로 넓혀서
-  // 나머지를 채웁니다. 그래도 부족하면 목업 플레이스홀더로 채워, 관련 없는 실제 소스가 억지로
-  // 붙는 것보다는 낫게 합니다.
+  // 2단계: 장소 전용 검색만으로 못 채운 항목만, 목적지 전체 후보 풀(같은 도시/지역 범위)로
+  // 넓혀서 나머지를 채웁니다. 그래도 부족하면 목업 플레이스홀더로 채워, 관련 없는 실제 소스가
+  // 억지로 붙는 것보다는 낫게 합니다.
   for (const title of shortTitles) {
     const item = itemByTitle.get(title)!;
     const picked = sourcesByTitle.get(title)!;
     const remaining = SOURCES_PER_ITEM - picked.length;
     if (remaining <= 0) continue;
 
-    const widened = approvedPool
+    const widened = approvedFallbackPool
       .filter((s) => !usedSourceIds.has(s.id))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
