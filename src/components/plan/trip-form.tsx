@@ -101,6 +101,7 @@ export function TripForm({
               <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
                 <p className="text-sm text-amber-900 dark:text-amber-200">
                   &quot;{ambiguousGroup.key}&quot;은(는) 여러 지역이 있어요. 정확한 지역을 선택해주세요.
+                  목록은 예시일 뿐이니, 없는 도시는 위 입력창에 직접 입력하셔도 됩니다.
                 </p>
                 <Select
                   value={ambiguousGroup.options.some((o) => o.value === value.destination.trim()) ? value.destination.trim() : undefined}

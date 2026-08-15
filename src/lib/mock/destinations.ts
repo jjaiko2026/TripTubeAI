@@ -231,7 +231,13 @@ export interface AmbiguousDestinationOption {
   value: string;
 }
 
-/** 이름만으로는 어느 지역인지 특정할 수 없는 국내 지명. 사용자가 폼/챗봇에서 명확히 고르도록 안내하는 데 씁니다. */
+/**
+ * 이름만으로는 어느 지역인지 특정할 수 없는 지명(광주/고성), 그리고 "베트남"처럼 나라 단위라
+ * 범위가 너무 넓은 목적지. 두 경우 모두 사용자가 폼/챗봇에서 구체적인 도시로 확정하도록
+ * 안내하는 데 씁니다 — destination이 나라 단위 그대로 넘어가면 일정 생성 시 활동/지오코딩/
+ * 유튜브·네이버 검색까지 나라 전체로 흩어져(예: 다낭 일정에 베트남 전역 영상이 붙음),
+ * 검색 쿼터만 넓게 쓰고 정확도는 떨어지기 때문입니다.
+ */
 export const AMBIGUOUS_DESTINATIONS: Record<string, AmbiguousDestinationOption[]> = {
   "광주": [
     { label: "광주광역시 (전라도)", value: "광주광역시" },
@@ -240,6 +246,47 @@ export const AMBIGUOUS_DESTINATIONS: Record<string, AmbiguousDestinationOption[]
   "고성": [
     { label: "강원 고성군", value: "강원 고성군" },
     { label: "경남 고성군", value: "경남 고성군" },
+  ],
+  "베트남": [
+    { label: "다낭", value: "다낭" },
+    { label: "하노이", value: "하노이" },
+    { label: "호치민", value: "호치민" },
+    { label: "나트랑", value: "나트랑" },
+    { label: "푸꾸옥", value: "푸꾸옥" },
+    { label: "호이안", value: "호이안" },
+    { label: "달랏", value: "달랏" },
+  ],
+  "일본": [
+    { label: "도쿄", value: "도쿄" },
+    { label: "오사카", value: "오사카" },
+    { label: "후쿠오카", value: "후쿠오카" },
+    { label: "삿포로", value: "삿포로" },
+    { label: "오키나와", value: "오키나와" },
+    { label: "교토", value: "교토" },
+    { label: "나고야", value: "나고야" },
+  ],
+  "태국": [
+    { label: "방콕", value: "방콕" },
+    { label: "치앙마이", value: "치앙마이" },
+    { label: "푸켓", value: "푸켓" },
+    { label: "파타야", value: "파타야" },
+    { label: "끄라비", value: "끄라비" },
+  ],
+  "프랑스": [
+    { label: "파리", value: "파리" },
+    { label: "니스", value: "니스" },
+    { label: "리옹", value: "리옹" },
+    { label: "마르세유", value: "마르세유" },
+    { label: "스트라스부르", value: "스트라스부르" },
+  ],
+  "한국": [
+    { label: "제주도", value: "제주도" },
+    { label: "부산", value: "부산" },
+    { label: "강릉", value: "강릉" },
+    { label: "여수", value: "여수" },
+    { label: "경주", value: "경주" },
+    { label: "전주", value: "전주" },
+    { label: "속초", value: "속초" },
   ],
 };
 

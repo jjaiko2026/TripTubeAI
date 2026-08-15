@@ -405,6 +405,11 @@ function channelOrSite(source: Source): string {
   return source.kind === "youtube" ? source.channelName : source.siteName;
 }
 
+/** 소스 제목/스니펫에 장소명이 실제로 등장하는지 — "정확히 그 장소를 가리키는 소스"의 기준입니다. */
+function isPlaceMatch(source: Source, place: string): boolean {
+  return sourceText(source).some((t) => t?.includes(place));
+}
+
 /**
  * 후보 하나가 특정 일정 항목에 얼마나 맞는지 PRD §15 가중치로 점수를 매깁니다. 항목마다
  * 따로 검색하지 않는 대신, 여행 전체 후보 풀에서 AI 호출 없이(자체 랭킹) 항목에 맞는
@@ -431,7 +436,7 @@ function scoreSourceForItem(
           return sum + PRIORITY_MATCH_BOOST[priority];
         }, 0) / item.tags.length;
   const tripStyleMatch = text.some((t) => t?.includes(request.memberType)) ? 1 : 0.3;
-  const placeMatch = text.some((t) => t?.includes(place)) ? 1 : 0;
+  const placeMatch = isPlaceMatch(source, place) ? 1 : 0;
   const freshness = freshnessScore(source);
   // 조회수 등 실제 참여도 지표는 아직 붙이지 않아 중립값으로 둡니다.
   const engagement = 0.5;
@@ -477,31 +482,53 @@ async function attachSourcesAndLocations(
   const usedChannels = new Set<string>();
   const sourcesByTitle = new Map<string, Source[]>();
 
+  // 1단계: 모든 항목에 "그 장소를 실제로 언급하는" 소스만 먼저 배정합니다. 항목 하나가
+  // 부족하다고 바로 다른 지역 소스로 채우면, 뒤 순서 항목이 가질 수 있었던 정확한 소스를
+  // 먼저 가로챌 수 있으므로, 넓혀서 채우는 건 전체 항목의 정확 매칭이 끝난 뒤(2단계)로 미룹니다.
+  const shortTitles: string[] = [];
   for (const title of uniqueTitles) {
     const item = itemByTitle.get(title)!;
-    const fresh = approvedPool.filter((s) => !usedSourceIds.has(s.id));
-    const ranked = fresh
+    const place = primaryPlaceQuery(title);
+    const exactMatches = approvedPool
+      .filter((s) => !usedSourceIds.has(s.id) && isPlaceMatch(s, place))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
-      .map((r) => r.source);
+      .map((r) => r.source)
+      .slice(0, SOURCES_PER_ITEM);
 
-    const picked = ranked.slice(0, SOURCES_PER_ITEM);
-    // 후보 풀 자체가 작을 때(짧은 여행이라 원본 검색 결과가 적을 때)는 이미 쓴 후보라도 재사용합니다.
-    if (picked.length < SOURCES_PER_ITEM) {
-      for (const s of approvedPool) {
-        if (picked.length >= SOURCES_PER_ITEM) break;
-        if (!picked.includes(s)) picked.push(s);
-      }
-    }
-    if (picked.length < SOURCES_PER_ITEM) {
-      picked.push(...mockBestSources(`${destination.name} ${title}`, SOURCES_PER_ITEM - picked.length));
-    }
-
-    for (const s of picked) {
+    for (const s of exactMatches) {
       usedSourceIds.add(s.id);
       usedChannels.add(channelOrSite(s));
     }
-    sourcesByTitle.set(title, picked);
+    sourcesByTitle.set(title, exactMatches);
+    if (exactMatches.length < SOURCES_PER_ITEM) shortTitles.push(title);
+  }
+
+  // 2단계: 정확 매칭만으로 못 채운 항목만, 목적지 전체 후보 풀(같은 도시/지역 범위)로 넓혀서
+  // 나머지를 채웁니다. 그래도 부족하면 목업 플레이스홀더로 채워, 관련 없는 실제 소스가 억지로
+  // 붙는 것보다는 낫게 합니다.
+  for (const title of shortTitles) {
+    const item = itemByTitle.get(title)!;
+    const picked = sourcesByTitle.get(title)!;
+    const remaining = SOURCES_PER_ITEM - picked.length;
+    if (remaining <= 0) continue;
+
+    const widened = approvedPool
+      .filter((s) => !usedSourceIds.has(s.id))
+      .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.source)
+      .slice(0, remaining);
+
+    picked.push(...widened);
+    for (const s of widened) {
+      usedSourceIds.add(s.id);
+      usedChannels.add(channelOrSite(s));
+    }
+
+    if (picked.length < SOURCES_PER_ITEM) {
+      picked.push(...mockBestSources(`${destination.name} ${title}`, SOURCES_PER_ITEM - picked.length));
+    }
   }
 
   return plan.map((d) => ({
