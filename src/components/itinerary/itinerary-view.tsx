@@ -15,8 +15,6 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
 
   return (
     <div id="itinerary-printable" className="space-y-8">
-      <TripTipsCard tripTips={itinerary.tripTips} />
-
       <Card>
         <CardContent className="grid gap-4 pt-6 sm:grid-cols-4">
           <SummaryStat icon={<MapPin className="h-4 w-4" />} label="여행지" value={itinerary.destinationName} />
@@ -47,6 +45,8 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
         )}
       </Card>
 
+      <TripTipsCard tripTips={itinerary.tripTips} />
+
       {/* 지도는 외부 SDK가 그리는 이미지라 html2canvas로 캡처 시 캔버스가 오염돼 PDF 생성이
           깨질 수 있어, PDF 출력에서는 이 카드를 건너뜁니다 (itinerary-pdf-button.tsx). */}
       <Card data-pdf-exclude="true">
@@ -67,8 +67,12 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
           let locatedCount = 0;
 
           return (
+            // 하루 전체를 하나의 카드로 감싸긴 하지만, PDF에서는 이 카드를 통째로 캡처하지
+            // 않습니다(itinerary-pdf-button.tsx). 헤더와 각 항목 카드를 data-pdf-section으로
+            // 따로 표시해, 항목을 펼쳐 하루 카드가 페이지보다 길어져도 항목 중간이 잘리지
+            // 않고 항목 단위로 다음 페이지로 넘어가게 합니다.
             <Card key={day.day} style={{ backgroundColor: `${dayColor}26` }}>
-              <CardHeader>
+              <CardHeader data-pdf-section>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <span
                     className="rounded-full px-2.5 py-1 text-xs font-bold text-white"
