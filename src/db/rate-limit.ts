@@ -5,6 +5,8 @@ import { apiRateLimits } from "@/db/schema";
 // PRD §12. YouTube search.list는 유닛 비용이 커서 하루 호출량에 상한을 둡니다.
 // 실제 Google Cloud 프로젝트 쿼터에 맞춰 환경변수로 조정하세요.
 const YOUTUBE_DAILY_SEARCH_LIMIT = Number(process.env.YOUTUBE_DAILY_SEARCH_LIMIT ?? 200);
+// 공공데이터포털 TourAPI 일일 트래픽 한도(기본 1000회/일)에 맞춰 조정하세요.
+const TOUR_API_DAILY_LIMIT = Number(process.env.TOUR_API_DAILY_LIMIT ?? 1000);
 
 function todayId(api: string): string {
   return `${api}::${new Date().toISOString().slice(0, 10)}`;
@@ -28,4 +30,9 @@ async function consumeDailyQuota(api: string, dailyLimit: number): Promise<boole
 /** 이번 YouTube search.list 호출이 오늘 상한 안에 드는지 확인합니다 (초과분은 캐시/목업으로 대체). */
 export function consumeYoutubeQuota(): Promise<boolean> {
   return consumeDailyQuota("youtube", YOUTUBE_DAILY_SEARCH_LIMIT);
+}
+
+/** 이번 TourAPI 호출이 오늘 상한 안에 드는지 확인합니다 (초과분은 캐시/기존 activityCatalog로 대체). */
+export function consumeTourApiQuota(): Promise<boolean> {
+  return consumeDailyQuota("tour_api", TOUR_API_DAILY_LIMIT);
 }
