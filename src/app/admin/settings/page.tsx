@@ -9,7 +9,6 @@ export default function AdminSettingsPage() {
           <li>YOUTUBE_DAILY_SEARCH_LIMIT — YouTube search.list 일일 상한</li>
           <li>TOUR_API_SERVICE_KEY — 한국관광공사 TourAPI(공공데이터포털) 인증키</li>
           <li>TOUR_API_DAILY_LIMIT — TourAPI 일일 호출 상한 (기본 1000)</li>
-          <li>CONTENT_JOB_MAX_RETRIES — 콘텐츠 생성 실패 시 재시도 횟수 (연동 시)</li>
         </ul>
       </div>
     </div>

@@ -94,3 +94,61 @@ export const tourPlaceCache = pgTable("tour_place_cache", {
   places: jsonb("places").$type<{ title: string; tags: string[] }[]>().notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── Content AI (PRD-v2.6 draft §39-45) ────────────────────────────────
+// 관리자가 선택한 여행 일정 하나를 Blog/YouTube/Shorts 콘텐츠로 확장하는 파이프라인.
+// 사용자용 화면에서는 절대 트리거하지 않고(Rule: 콘텐츠 생성은 관리자 영역에서만
+// 시작), 일정 생성과는 별개의 운영 비용으로 취급한다.
+
+export const contentJobs = pgTable("content_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itineraryId: uuid("itinerary_id").notNull(),
+  type: text("type").notNull(), // "blog" | "youtube" | "shorts" | "bundle"
+  status: text("status").notNull(), // queued|researching|generating|review_required|failed
+  requestedBy: text("requested_by").notNull(),
+  options: jsonb("options").$type<{ blog?: boolean; youtube?: boolean; shorts?: boolean; shortCount?: number }>(),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export const travelContentBriefs = pgTable("travel_content_briefs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itineraryId: uuid("itinerary_id").notNull(),
+  brief: jsonb("brief").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const blogContents = pgTable("blog_contents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itineraryId: uuid("itinerary_id").notNull(),
+  jobId: uuid("job_id").notNull(),
+  title: text("title").notNull(),
+  slug: text("slug").notNull(),
+  markdown: text("markdown").notNull(),
+  status: text("status").notNull(), // review_required|changes_requested
+  guardIssues: jsonb("guard_issues"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const youtubeContents = pgTable("youtube_contents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itineraryId: uuid("itinerary_id").notNull(),
+  jobId: uuid("job_id").notNull(),
+  title: text("title").notNull(),
+  script: jsonb("script").notNull(),
+  status: text("status").notNull(),
+  guardIssues: jsonb("guard_issues"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shortsContents = pgTable("shorts_contents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  itineraryId: uuid("itinerary_id").notNull(),
+  jobId: uuid("job_id").notNull(),
+  title: text("title").notNull(),
+  script: jsonb("script").notNull(),
+  status: text("status").notNull(),
+  guardIssues: jsonb("guard_issues"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

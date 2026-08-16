@@ -53,7 +53,7 @@ export default async function AdminItinerariesPage({
                 <td className="px-4 py-3">{monthLabel(trip.month)}</td>
                 <td className="px-4 py-3 text-muted-foreground">{relativeTimeLabel(trip.createdAt)}</td>
                 <td className="px-4 py-3">
-                  <Link href={`/admin/content/jobs?tripId=${trip.id}`} className="text-primary hover:underline">
+                  <Link href={`/admin/content/jobs?itineraryId=${trip.id}`} className="text-primary hover:underline">
                     콘텐츠 생성
                   </Link>
                 </td>
