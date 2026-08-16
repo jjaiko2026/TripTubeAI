@@ -12,6 +12,8 @@ import { mulberry32, hashSeed, seededShuffle } from "@/lib/mock/rng";
 import { mockSearchBlog, mockSearchYoutube } from "@/lib/mock/sources";
 import { fetchYoutubeVideos } from "@/lib/real/youtube";
 import { fetchNaverBlogs } from "@/lib/real/naver-blog";
+import { fetchTourApiPlaceHints } from "@/lib/real/tour-api";
+import { DESTINATION_AREA_CODE } from "@/lib/tour-area-codes";
 import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
 import { getCachedSources, saveCachedSources } from "@/db/source-cache";
@@ -106,15 +108,34 @@ const planSchema = z.object({
  * 설명/태그)를 짭니다. 실제 출처(영상/블로그) 매칭은 이후 단계에서 항목 제목 기준으로
  * 별도 검색해 붙입니다.
  */
+/**
+ * TourAPI(KorService2)로 확인된 실제 장소 이름을 기존 activityCatalog(대표 활동 목록)
+ * 앞쪽에 붙여, AI가 검증된 실제 장소명을 우선 참고하게 합니다. 국내이면서 area code
+ * 매핑이 있는 목적지만 대상이며, 실패/미설정 시 조용히 기존 activityCatalog만 씁니다.
+ */
+async function buildActivityCatalog(request: TripRequest, destination: DestinationProfile) {
+  const curated = destination.activities.slice(0, 6).map((a) => ({ title: a.title, tags: a.tags }));
+
+  const areaCode = request.region === "국내" ? DESTINATION_AREA_CODE[destination.id] : undefined;
+  if (!areaCode) return curated;
+
+  const tourHints = await fetchTourApiPlaceHints(areaCode).catch((error) => {
+    console.error("tour api place hints failed:", error);
+    return [];
+  });
+  if (tourHints.length === 0) return curated;
+
+  const curatedTitles = new Set(curated.map((a) => a.title));
+  const merged = [...tourHints.filter((h) => !curatedTitles.has(h.title)).slice(0, 10), ...curated];
+  return merged;
+}
+
 async function generateItineraryWithAI(
   request: TripRequest,
   destination: DestinationProfile,
   days: number
 ): Promise<PlanDay[]> {
-  const activityCatalog = destination.activities.slice(0, 6).map((a) => ({
-    title: a.title,
-    tags: a.tags,
-  }));
+  const activityCatalog = await buildActivityCatalog(request, destination);
   const mode = arrivalMode(request, destination);
 
   const { output } = await generateText({

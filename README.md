@@ -43,6 +43,15 @@ npm run dev
   | `GOOGLE_GEOCODING_API_KEY` | Google Cloud Console → Geocoding API 사용 설정 → API 키 (API 제한사항만, 리퍼러 제한 걸면 서버 호출이 막힘) |
   | `NEXT_PUBLIC_GOOGLE_MAPS_CLIENT_KEY` | Google Cloud Console → Maps JavaScript API 사용 설정 → API 키 (애플리케이션 제한사항을 HTTP 리퍼러로, 배포 도메인 등록 필수 — 브라우저에 노출되는 키라서) |
 
+- **관리자 화면**: `/admin`(ADMIN_USER_IDS에 포함된 Clerk user id만 접근 가능, `src/lib/admin.ts`). 사용자·여행 일정·분석 통계를 확인합니다 (`src/app/admin/*`, `src/db/admin-queries.ts`). 콘텐츠(Blog/YouTube/Shorts) 관리 화면은 자리만 마련되어 있고 아직 비활성 상태입니다.
+- **한국관광공사 TourAPI 연동**: 국내(`region: "국내"`) 목적지 중 area code가 매핑된 곳(제주/부산/강릉/여수/경주, `src/lib/tour-area-codes.ts`)은 일정 생성 시 TourAPI(`KorService2`)에서 실제 관광지·음식점 이름을 가져와 AI 프롬프트의 activityCatalog 앞쪽에 붙입니다(`src/lib/real/tour-api.ts`). 다른 실 API와 동일하게, 키가 없거나 호출이 실패하면 조용히 기존 activityCatalog만 사용합니다. 응답은 `tour_place_cache` 테이블에 14일 캐싱되고, 일일 호출 상한(`TOUR_API_DAILY_LIMIT`, 기본 1000)을 둡니다.
+
+  | 환경변수 | 발급처 |
+  |---|---|
+  | `TOUR_API_SERVICE_KEY` | [공공데이터포털](https://www.data.go.kr) → 한국관광공사_국문 관광정보 서비스_GW 활용신청 → 서비스키 발급 |
+  | `TOUR_API_BASE_URL` | 기본값 `https://apis.data.go.kr/B551011/KorService2` (보통 변경 불필요) |
+  | `TOUR_API_DAILY_LIMIT` | 일일 호출 상한 (기본 1000) |
+
 ## 주요 페이지
 
 | 경로 | 설명 |

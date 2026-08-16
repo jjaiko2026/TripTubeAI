@@ -85,3 +85,12 @@ export const reviews = pgTable("reviews", {
   nights: integer("nights").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// 한국관광공사 TourAPI(KorService2) areaBasedList2/searchKeyword2 원본 응답을 정규화해
+// 캐싱합니다. source_cache(유튜브/블로그)와 성격이 달라(장소 데이터, 30일보다 긴 TTL이 적합)
+// 별도 테이블로 둡니다 (PRD-v2.6 draft §19.1.9).
+export const tourPlaceCache = pgTable("tour_place_cache", {
+  cacheKey: text("cache_key").primaryKey(), // `${areaCode}::${contentTypeId}` 형태
+  places: jsonb("places").$type<{ title: string; tags: string[] }[]>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
