@@ -29,3 +29,20 @@ async function consumeDailyQuota(api: string, dailyLimit: number): Promise<boole
 export function consumeYoutubeQuota(): Promise<boolean> {
   return consumeDailyQuota("youtube", YOUTUBE_DAILY_SEARCH_LIMIT);
 }
+
+// docs/PHASE3_COLLECTION_DESIGN.md §10.1 — 관리자 지식 수집 파이프라인 전용 카운터.
+// 사용자 일정 생성(consumeYoutubeQuota)과 완전히 분리된 별도 id("youtube_collection")를 쓰므로,
+// 수집 작업이 예산을 다 써도 사용자 쿼터에는 영향이 없다.
+const YOUTUBE_COLLECTION_DAILY_LIMIT = Number(process.env.YOUTUBE_COLLECTION_DAILY_LIMIT ?? 30);
+
+export function consumeYoutubeCollectionQuota(): Promise<boolean> {
+  return consumeDailyQuota("youtube_collection", YOUTUBE_COLLECTION_DAILY_LIMIT);
+}
+
+/** 실행 전 미리보기용 — 카운터를 올리지 않고 오늘 이미 쓴 수집 쿼터만 조회합니다. */
+export async function peekYoutubeCollectionQuotaUsed(): Promise<{ used: number; limit: number }> {
+  const db = getDb();
+  const id = todayId("youtube_collection");
+  const [row] = await db.select().from(apiRateLimits).where(sql`${apiRateLimits.id} = ${id}`).limit(1);
+  return { used: row?.count ?? 0, limit: YOUTUBE_COLLECTION_DAILY_LIMIT };
+}

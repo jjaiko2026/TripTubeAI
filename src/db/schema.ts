@@ -1,6 +1,9 @@
-import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Source, TripTips } from "@/lib/types";
 import type { TripPurpose } from "@/lib/purposes";
+import type { ContentTypeId, KnowledgeContent } from "@/lib/knowledge/types";
 
 export const itineraries = pgTable("itineraries", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -85,3 +88,338 @@ export const reviews = pgTable("reviews", {
   nights: integer("nights").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// =============================================================================
+// ATKB 여행 지식 계층 (신규, additive) — docs/IMPLEMENTATION_PHASES.md Phase 1-A
+//
+// 위 7개 테이블(itineraries ~ reviews)은 이 섹션에서 전혀 수정하지 않는다. 아래 10개 테이블은
+// 기존 요청형 검색 파이프라인(itinerary.ts)과는 별도로 동작하는 축적형 지식 수집 파이프라인
+// 전용이며, 기존 테이블을 참조하는 FK가 하나도 없다(docs/SCHEMA_REVIEW.md §9).
+// =============================================================================
+
+// 지역 계층(대륙→국가→지역/권역→도시→세부지역 / 대한민국→시도→시군구→세부지역).
+// parentRegionId 자기참조로 트리를 구성한다 (docs/REGION_RULES.md §1).
+export const regions = pgTable(
+  "regions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // 사람이 읽는 안정 식별자 (예: "KR-JEJU-AEWOL", "JP-OSAKA"). PK는 아니다.
+    code: text("code").notNull(),
+    parentRegionId: uuid("parent_region_id").references((): AnyPgColumn => regions.id),
+    level: text("level").notNull(), // RegionLevel (src/lib/knowledge/types.ts)
+    domesticOverseas: text("domestic_overseas").notNull(), // "domestic" | "overseas"
+    nameKo: text("name_ko").notNull(),
+    nameLocal: text("name_local"),
+    countryCode: text("country_code"), // ISO 3166-1 alpha-2, 해외만
+    aliases: jsonb("aliases").$type<string[]>().notNull().default([]),
+    status: text("status").notNull().default("review"), // "confirmed" | "review" | "excluded"
+    // 예: "JEJU_DIRECTIONAL" | "MULTI_REGION" — status가 excluded일 때만 채운다.
+    exclusionReason: text("exclusion_reason"),
+    // TourAPI 지역코드 매핑 (Phase 3-C, docs/TOUR_API_DATA_MODEL_REVIEW.md §4). TourAPI 하나만
+    // 매핑 대상인 동안은 별도 매핑 테이블 대신 컬럼으로 둔다 — 두 번째 외부 지역코드 체계가
+    // 필요해지면 그때 별도 테이블로 리팩터링한다. UNIQUE 없음: 같은 areaCode를 제주시/서귀포시가
+    // sigunguCode로만 구분해 공유한다.
+    tourApiAreaCode: text("tour_api_area_code"),
+    tourApiSigunguCode: text("tour_api_sigungu_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("regions_code_idx").on(table.code),
+    index("regions_parent_region_id_idx").on(table.parentRegionId),
+    index("regions_domestic_overseas_level_idx").on(table.domesticOverseas, table.level),
+  ]
+);
+
+// 블로그 등 YouTube가 아닌 출처. YouTube 영상은 아래 videos 테이블이 전담하므로(중복 방지 목적상
+// videoId를 PK로 쓰기 위해 별도 테이블로 분리, docs/CURRENT_SYSTEM_ANALYSIS.md §6 참고),
+// sources.sourceType은 현재 "blog"만 쓰지만 향후 다른 텍스트 출처(공식 홈페이지 등)를 위해
+// 자유 text로 둔다.
+export const sources = pgTable(
+  "sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceType: text("source_type").notNull(), // "blog" | ...
+    sourceUrl: text("source_url").notNull(),
+    title: text("title").notNull(),
+    publisher: text("publisher"), // 사이트명/작성자
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    // 이 파이프라인이 이 출처를 발견/조회한 시각. publishedAt(원문 게시 시각)과 절대 혼동하지
+    // 않는다 — 최신성 판단은 이 값이 아니라 publishedAt 기준이다.
+    searchedAt: timestamp("searched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("sources_source_url_idx").on(table.sourceUrl)]
+);
+
+// YouTube 영상 메타데이터. 영상 파일은 저장하지 않는다 — API가 제공하는 공개 메타데이터만
+// 저장한다 (docs/YOUTUBE_RULES.md §1). videoId를 PK로 써서 "동일 Video ID 중복 저장 금지"를
+// DB 제약(Postgres primary key = unique + not null)으로 강제한다(docs/YOUTUBE_RULES.md §3).
+export const videos = pgTable(
+  "videos",
+  {
+    videoId: text("video_id").primaryKey(),
+    videoUrl: text("video_url").notNull(),
+    title: text("title").notNull(),
+    channelId: text("channel_id"),
+    channelName: text("channel_name"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    description: text("description"),
+    durationLabel: text("duration_label"),
+    viewCount: integer("view_count"),
+    thumbnailUrl: text("thumbnail_url"),
+    // 이 파이프라인이 이 영상을 검색/발견한 시각. publishedAt과 절대 같은 의미로 쓰지 않는다
+    // (사용자 확정 사항 — docs/DATA_SCHEMA_PROPOSAL.md §5).
+    searchedAt: timestamp("searched_at", { withTimezone: true }).notNull().defaultNow(),
+    regionId: uuid("region_id").references(() => regions.id), // 분류 전에는 null
+    contentTypes: jsonb("content_types").$type<ContentTypeId[]>().notNull().default([]),
+    // VideoPipelineStatus: "discovered" | "filtered" | "classified" | "extracted" |
+    // "normalized" | "verified"
+    status: text("status").notNull().default("discovered"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("videos_region_id_idx").on(table.regionId),
+    index("videos_searched_at_idx").on(table.searchedAt),
+    index("videos_channel_id_idx").on(table.channelId),
+  ]
+);
+
+// 정규화된 장소. 좌표는 기존 geocodeProvider(src/lib/geo/geocode-provider.ts, 무변경)로 얻은
+// 결과를 여기 영속 저장해, 같은 장소를 다시 지오코딩하지 않도록 한다.
+export const places = pgTable(
+  "places",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    regionId: uuid("region_id")
+      .notNull()
+      .references(() => regions.id),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    aliases: jsonb("aliases").$type<string[]>().notNull().default([]),
+    category: text("category").notNull(), // "tourism" | "food" | "accommodation" | ...
+    address: text("address"),
+    lat: text("lat"), // 문자열로 저장(정밀도 손실 방지) — 조회 시 Number() 변환
+    lng: text("lng"),
+    // 이 장소가 처음 발견된 영상/출처 (검수 화면에서 "어디서 나왔는가" 바로 보여주기 위한 편의
+    // 필드). 정식 근거 추적은 video_knowledge.placeId 쪽 조인이 우선이다 — 이 필드는 참고용.
+    firstSeenVideoId: text("first_seen_video_id").references(() => videos.videoId),
+    firstSeenSourceId: uuid("first_seen_source_id").references(() => sources.id),
+    status: text("status").notNull().default("review"), // "confirmed" | "review" | "excluded"
+    // TourAPI(공식 관광정보) 연동 컬럼 (Phase 3-C, docs/TOUR_API_DATA_MODEL_REVIEW.md). 전부
+    // nullable — YouTube/Naver 유래 place는 계속 null이다. TourAPI는 sources 테이블에 넣지 않고
+    // 여기 places에 직접 저장한다(§3) — externalSource="tour_api"로 채운다.
+    //
+    // 원칙: externalSource가 채워진 행은 name/normalizedName/address/lat/lng/category를 이후
+    // 어떤 파이프라인(AI 추출 포함)도 UPDATE하지 않는다 — TourAPI 원본이 우선한다(§6).
+    externalSource: text("external_source"), // "tour_api" 등
+    externalContentId: text("external_content_id"), // TourAPI contentid
+    externalContentTypeId: text("external_content_type_id"), // TourAPI contenttypeid, 원본 그대로 보존
+    categoryCode1: text("category_code1"), // TourAPI cat1 (대분류)
+    categoryCode2: text("category_code2"), // TourAPI cat2 (중분류)
+    categoryCode3: text("category_code3"), // TourAPI cat3 (소분류)
+    homepage: text("homepage"),
+    tel: text("tel"),
+    overview: text("overview"),
+    // TourAPI 원본 갱신 시각(modifiedtime, YYYYMMDDHHmmss 파싱). 우리 시스템이 손댄 시각인
+    // updatedAt과 의미가 다르다 — 파싱 실패/빈 값은 에러 대신 null로 처리한다.
+    externalModifiedAt: timestamp("external_modified_at", { withTimezone: true }),
+    externalAreaCode: text("external_area_code"), // TourAPI areaCode, regions 매핑 재계산용 원본 보존
+    externalSigunguCode: text("external_sigungu_code"), // TourAPI sigunguCode
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("places_region_id_idx").on(table.regionId),
+    index("places_normalized_name_idx").on(table.normalizedName),
+    index("places_region_id_normalized_name_idx").on(table.regionId, table.normalizedName),
+    // 단독 externalContentId UNIQUE는 만들지 않는다 — 향후 다른 공급원이 같은 ID 값을 쓸 수
+    // 있어 충돌 위험이 있다(§2). Postgres 복합 UNIQUE는 두 컬럼 중 하나라도 NULL이면 유일성
+    // 검사에서 제외되므로, YouTube/Naver 유래로 두 컬럼이 전부 null인 기존 행들과 충돌하지 않는다.
+    uniqueIndex("places_external_source_content_id_idx").on(
+      table.externalSource,
+      table.externalContentId
+    ),
+  ]
+);
+
+// AI(또는 관리자)가 영상/출처에서 추출한 여행 지식. 원본 사실과 AI 해석을 구분하기 위해
+// extractionMethod + confidence + sourceReference를 항상 함께 저장한다
+// (docs/KNOWLEDGE_EXTRACTION.md §3). videoId/sourceRefId 중 정확히 하나만 채운다 — Phase 1-B-1
+// 검토에서 Drizzle 0.45.2가 실제 CHECK 제약 SQL을 생성할 수 있음을 확인해, DB 레벨로 강제한다.
+export const videoKnowledge = pgTable(
+  "video_knowledge",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    videoId: text("video_id").references(() => videos.videoId),
+    sourceRefId: uuid("source_ref_id").references(() => sources.id),
+    placeId: uuid("place_id").references(() => places.id), // 아직 정규화 전이면 null
+    knowledgeType: text("knowledge_type").notNull(), // KnowledgeTypeId
+    content: jsonb("content").$type<KnowledgeContent>().notNull(),
+    extractionMethod: text("extraction_method").notNull(), // "ai" | "manual"
+    // 원문의 어느 부분에서 나왔는지(가능하면 인용, 최소한 "제목/설명 중 어디" 구분).
+    sourceReference: text("source_reference"),
+    confidence: text("confidence"), // "high" | "medium" | "low", AI 추출일 때만
+    status: text("status").notNull().default("unverified"), // "confirmed" | "review" | "unverified"
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("video_knowledge_video_id_idx").on(table.videoId),
+    index("video_knowledge_source_ref_id_idx").on(table.sourceRefId),
+    index("video_knowledge_place_id_idx").on(table.placeId),
+    index("video_knowledge_status_idx").on(table.status),
+    // videoId(YouTube 원본) 또는 sourceRefId(블로그 등 sources 원본) 중 정확히 하나만 채워야
+    // 한다 — 둘 다 null이거나 둘 다 채워진 행은 DB가 거부한다.
+    check(
+      "video_knowledge_exactly_one_origin_check",
+      sql`(${table.videoId} IS NOT NULL) <> (${table.sourceRefId} IS NOT NULL)`
+    ),
+  ]
+);
+
+// 장소 간 관계 (인접/추천 동선/도보·대중교통 경로/같은 구역/같은 테마 등).
+export const placeRelations = pgTable(
+  "place_relations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromPlaceId: uuid("from_place_id")
+      .notNull()
+      .references(() => places.id),
+    toPlaceId: uuid("to_place_id")
+      .notNull()
+      .references(() => places.id),
+    relationType: text("relation_type").notNull(), // RelationType
+    basis: text("basis"), // 근거 (예: "같은 코스에 3회 이상 함께 등장")
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // 같은 두 장소 사이에 같은 유형의 관계가 중복 저장되는 것을 막는다.
+    uniqueIndex("place_relations_from_to_type_idx").on(
+      table.fromPlaceId,
+      table.toPlaceId,
+      table.relationType
+    ),
+    index("place_relations_from_place_id_idx").on(table.fromPlaceId),
+    index("place_relations_to_place_id_idx").on(table.toPlaceId),
+  ]
+);
+
+// 기존 콘텐츠(영상/블로그)에서 발견된 여행코스. 향후 1일~4일 이상의 코스 구축에 쓰인다
+// (docs/DATA_SCHEMA_PROPOSAL.md §8). 사용자가 매 요청마다 생성하는 itineraries.days(JSONB)와는
+// 별개 — travelCourses는 "발견된 코스", itineraries는 "그때그때 생성한 결과물"이다.
+export const travelCourses = pgTable(
+  "travel_courses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    regionId: uuid("region_id")
+      .notNull()
+      .references(() => regions.id),
+    title: text("title").notNull(),
+    durationDays: integer("duration_days").notNull(),
+    videoId: text("video_id").references(() => videos.videoId),
+    sourceRefId: uuid("source_ref_id").references(() => sources.id),
+    description: text("description"),
+    status: text("status").notNull().default("review"), // "confirmed" | "review" | "excluded"
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("travel_courses_region_id_idx").on(table.regionId),
+    // videoKnowledge와 동일한 배타조건 — 코스는 항상 발견된 원본(영상 또는 블로그)이 있어야 한다.
+    check(
+      "travel_courses_exactly_one_origin_check",
+      sql`(${table.videoId} IS NOT NULL) <> (${table.sourceRefId} IS NOT NULL)`
+    ),
+  ]
+);
+
+export const courseItems = pgTable(
+  "course_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => travelCourses.id),
+    day: integer("day").notNull(),
+    orderInDay: integer("order_in_day").notNull(),
+    placeId: uuid("place_id")
+      .notNull()
+      .references(() => places.id),
+    dwellMinutes: integer("dwell_minutes"),
+    travelMethod: text("travel_method"), // "도보" | "대중교통" | "차량" 등, 자유 텍스트
+    note: text("note"),
+  },
+  (table) => [
+    index("course_items_course_id_idx").on(table.courseId),
+    // 같은 코스의 같은 날짜에 같은 순번이 중복 배정되는 것을 막는다.
+    uniqueIndex("course_items_course_day_order_idx").on(table.courseId, table.day, table.orderInDay),
+  ]
+);
+
+// 검색 실행 이력. 결과 데이터(videos/sources)와는 별개로, "언제 어떤 조건으로 검색했는지"만
+// 감사 기록으로 남긴다 (docs/DATA_SCHEMA_PROPOSAL.md §9).
+export const searchLog = pgTable(
+  "search_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    keyword: text("keyword").notNull(),
+    domesticOverseas: text("domestic_overseas"),
+    continent: text("continent"),
+    country: text("country"),
+    regionText: text("region_text"), // 검색 시점에 지정한 원문 지역 표현
+    city: text("city"),
+    contentType: text("content_type"),
+    // 검색 실행 시점(searchedAt) 기준으로 동적 계산된 값을 결과로 저장한다 — 코드에 고정
+    // 날짜를 두지 않는다(docs/YOUTUBE_RULES.md §2).
+    dateFrom: timestamp("date_from", { withTimezone: true }).notNull(),
+    dateTo: timestamp("date_to", { withTimezone: true }).notNull(),
+    searchedAt: timestamp("searched_at", { withTimezone: true }).notNull().defaultNow(),
+    resultCount: integer("result_count").notNull().default(0),
+    acceptedCount: integer("accepted_count").notNull().default(0),
+    excludedCount: integer("excluded_count").notNull().default(0),
+    errorCount: integer("error_count").notNull().default(0),
+  },
+  (table) => [
+    index("search_log_searched_at_idx").on(table.searchedAt),
+    index("search_log_keyword_idx").on(table.keyword),
+  ]
+);
+
+// 정식 지식 데이터로 승격하지 않은 영상의 제외 사유. 삭제가 아니라 사유 보존이 목적이라
+// videos 행 자체는 그대로 둔 채 이 테이블에만 기록한다 — 향후 알고리즘 개선 시 재처리할 수
+// 있게 한다(docs/REGION_RULES.md §3).
+export const excludedVideo = pgTable(
+  "excluded_video",
+  {
+    videoId: text("video_id")
+      .primaryKey()
+      .references(() => videos.videoId),
+    // ExcludedVideoReason: "MULTI_REGION" | "REGION_UNCLEAR" | "JEJU_DIRECTIONAL" |
+    // "OLDER_THAN_ONE_YEAR" | "DUPLICATE" | "IRRELEVANT" | "REVIEW_REQUIRED"
+    reason: text("reason").notNull(),
+    note: text("note"),
+    excludedAt: timestamp("excluded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("excluded_video_reason_idx").on(table.reason)]
+);
+
+// TourAPI detailIntro2(유형별 상세정보) 전용 (Phase 3-F, docs/PHASE3F_DATA_MODEL_PROPOSAL.md).
+// 관광지/문화시설/음식점/숙박 등 콘텐츠유형마다 필드셋이 완전히 다르므로(§3~§4), places에
+// 유형별 컬럼을 추가하지 않고 원본 필드명 그대로 JSONB로 보존한다. AI가 이 테이블을
+// 절대 UPDATE하지 않는다 — TourAPI 원본 전용 계층이며 video_knowledge(AI 해석)와는
+// FK로 연결하지 않아 원본/AI 계층을 분리 유지한다(§15).
+export const placeTourismDetails = pgTable(
+  "place_tourism_details",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    placeId: uuid("place_id")
+      .notNull()
+      .references(() => places.id),
+    contentTypeId: text("content_type_id").notNull(), // TourAPI contenttypeid 원본 그대로("12"/"14"/"32"/"39" 등)
+    detailData: jsonb("detail_data").notNull(), // detailIntro2 원본 필드를 키 이름 그대로 보존(contentid/contenttypeid 제외)
+    source: text("source").notNull().default("tour_api"), // 향후 다른 공급원 대비(§16) — nullable이 아님, 이 테이블은 항상 출처가 있어야 의미가 있다
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(), // TourAPI에서 마지막으로 가져온 시각(우리가 편집한 시각이 아님)
+  },
+  (table) => [
+    uniqueIndex("place_tourism_details_place_content_type_idx").on(table.placeId, table.contentTypeId),
+    index("place_tourism_details_content_type_id_idx").on(table.contentTypeId),
+  ]
+);
