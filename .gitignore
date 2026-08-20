@@ -36,6 +36,9 @@ yarn-error.log*
 # docs (internal reference docs, not part of the deployed app)
 /docs/
 
+# logs (local script execution logs, not part of the deployed app)
+/logs/
+
 # vercel
 .vercel
 
