@@ -59,6 +59,10 @@ export interface ItineraryItem {
   tags: PurposeId[];
   sources: Source[];
   location: GeoLocation | null;
+  /** TourAPI places.id 참조(uuid). "장소를 일정에 추가" 기능(TOUR PLACE → ITINERARY)으로
+   *  생긴 항목에만 있다 — TourAPI 원본 데이터를 중복 저장하지 않고 참조만 남긴다. AI가
+   *  직접 생성한 기존 항목에는 없다(옵셔널, 이 필드가 생기기 전 저장된 일정도 그대로 유효). */
+  placeId?: string;
 }
 
 export interface ItineraryDay {

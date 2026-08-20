@@ -10,9 +10,42 @@ import { colorForDay } from "@/lib/day-colors";
 import type { Itinerary } from "@/lib/types";
 import { PURPOSE_LABELS } from "@/lib/purposes";
 import { MapPin, Users, CalendarDays, Wallet, Route } from "lucide-react";
+import { getPlaceById, type PlaceWithDetails } from "@/db/queries";
 
-export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
+/**
+ * itinerary.days의 항목 중 placeId가 있는 것만(ITINERARY PLACE MANAGEMENT v1) 골라
+ * getPlaceById()로 한 번씩만 조회한다(같은 place가 여러 항목에 있어도 중복 호출하지 않음).
+ * getPlaceById() 자체는 무수정 재사용 — 여기서는 결과를 Map으로 모을 뿐이다.
+ */
+async function resolvePlacesById(itinerary: Itinerary): Promise<Map<string, PlaceWithDetails>> {
+  const uniqueIds = new Set<string>();
+  for (const day of itinerary.days) {
+    for (const item of day.items) {
+      if (item.placeId) uniqueIds.add(item.placeId);
+    }
+  }
+  if (uniqueIds.size === 0) return new Map();
+
+  const results = await Promise.all([...uniqueIds].map((id) => getPlaceById(id)));
+  const map = new Map<string, PlaceWithDetails>();
+  results.forEach((place, i) => {
+    if (place) map.set([...uniqueIds][i], place);
+  });
+  return map;
+}
+
+export async function ItineraryView({
+  itinerary,
+  itineraryId,
+  canManage,
+}: {
+  itinerary: Itinerary;
+  itineraryId: string;
+  /** 로그인한 뷰어에게만 일정 항목 삭제 UI를 보여준다(실제 소유자 검증은 서버 액션에서). */
+  canManage: boolean;
+}) {
   const { request } = itinerary;
+  const placesById = await resolvePlacesById(itinerary);
 
   return (
     <div id="itinerary-printable" className="space-y-8">
@@ -101,7 +134,16 @@ export function ItineraryView({ itinerary }: { itinerary: Itinerary }) {
                 {day.items.map((item, idx) => {
                   const indexInDay = item.location ? ++locatedCount : null;
                   return (
-                    <ItineraryItemCard key={idx} item={item} color={dayColor} indexInDay={indexInDay} />
+                    <ItineraryItemCard
+                      key={idx}
+                      item={item}
+                      color={dayColor}
+                      indexInDay={indexInDay}
+                      place={item.placeId ? placesById.get(item.placeId) : undefined}
+                      itineraryId={itineraryId}
+                      dayNumber={day.day}
+                      canManage={canManage}
+                    />
                   );
                 })}
               </CardContent>

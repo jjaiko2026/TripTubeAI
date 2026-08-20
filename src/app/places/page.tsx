@@ -1,0 +1,101 @@
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
+import { getPlacesByRegion } from "@/db/queries";
+import { PlaceCard } from "@/components/places/place-card";
+import { PlacesMap } from "@/components/places/places-map";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+// TourAPI 데이터가 실제로 존재하는 지역만 노출한다(PHASE 3-L-1, getPlacesByRegion()이
+// 기대하는 regions.code와 동일한 값). 잘못된/미지원 region 쿼리 파라미터는 서울로 폴백한다.
+const REGIONS = [
+  { code: "KR-SEOUL-CITY", label: "서울" },
+  { code: "KR-JEJU-JEJUSI", label: "제주시" },
+  { code: "KR-JEJU-SEOGWIPO", label: "서귀포시" },
+] as const;
+
+const DEFAULT_REGION_CODE: (typeof REGIONS)[number]["code"] = "KR-SEOUL-CITY";
+
+const SECTION_ORDER = [
+  { contentTypeId: "12", label: "관광지" },
+  { contentTypeId: "14", label: "문화시설" },
+  { contentTypeId: "39", label: "음식점" },
+] as const;
+
+function resolveRegionCode(raw: string | undefined): (typeof REGIONS)[number]["code"] {
+  const match = REGIONS.find((r) => r.code === raw);
+  return match ? match.code : DEFAULT_REGION_CODE;
+}
+
+export default async function PlacesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ region?: string }>;
+}) {
+  const params = await searchParams;
+  const regionCode = resolveRegionCode(params.region);
+  const activeRegion = REGIONS.find((r) => r.code === regionCode)!;
+  const places = await getPlacesByRegion(regionCode);
+
+  const sections = SECTION_ORDER.map((section) => ({
+    ...section,
+    places: places.filter((p) => p.externalContentTypeId === section.contentTypeId),
+  })).filter((section) => section.places.length > 0);
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">장소 둘러보기</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{activeRegion.label}의 관광지·문화시설·음식점을 둘러보세요.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button render={<Link href="/places/recommend" />} variant="outline" size="sm">
+            <Sparkles className="h-4 w-4" />
+            AI 추천 받기
+          </Button>
+          <Button render={<Link href="/places/plan" />} variant="outline" size="sm">
+            <Sparkles className="h-4 w-4" />
+            AI 일정 만들기
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-8 flex gap-2">
+        {REGIONS.map((region) => (
+          <Link
+            key={region.code}
+            href={`/places?region=${region.code}`}
+            className={cn(buttonVariants({ variant: region.code === regionCode ? "default" : "outline" }))}
+          >
+            {region.label}
+          </Link>
+        ))}
+      </div>
+
+      <div className="mb-10">
+        <h2 className="mb-4 text-lg font-medium">지도</h2>
+        <PlacesMap places={places} />
+      </div>
+
+      {sections.length === 0 ? (
+        <p className="text-center text-sm text-muted-foreground">표시할 장소가 없습니다.</p>
+      ) : (
+        <div className="flex flex-col gap-10">
+          {sections.map((section) => (
+            <section key={section.contentTypeId}>
+              <h2 className="mb-4 text-lg font-medium">
+                {section.label} <span className="text-sm font-normal text-muted-foreground">{section.places.length}곳</span>
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {section.places.map((place) => (
+                  <PlaceCard key={place.id} place={place} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
 import { ArrowLeft, RefreshCcw, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button";
 import { WriteReviewDialog } from "@/components/reviews/write-review-dialog";
+import { DeleteItineraryButton } from "@/components/plan/delete-itinerary-button";
 import { getItinerary } from "@/db/queries";
 import { monthLabel } from "@/lib/format";
 
@@ -14,8 +16,16 @@ export default async function PlanResultPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const itinerary = await getItinerary(id);
+  // 결과 페이지는 의도적으로 소유자 무관 공개 조회다(공유 링크 지원, src/db/queries.ts
+  // getItinerary() 주석 참고) — 이 동작은 바꾸지 않는다. 일정 항목 삭제 UI를 보여줄지만
+  // 별도로 소유자 일치 여부를 확인한다(같은 getItinerary()를 userId까지 넘겨 한 번 더 호출).
+  const { userId } = await auth();
+  const [itinerary, ownedItinerary] = await Promise.all([
+    getItinerary(id),
+    userId ? getItinerary(id, userId) : Promise.resolve(null),
+  ]);
   if (!itinerary) notFound();
+  const canManage = ownedItinerary !== null;
 
   const { request } = itinerary;
   const pdfTitle =
@@ -37,6 +47,7 @@ export default async function PlanResultPage({
           <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
             <RefreshCcw className="h-4 w-4" /> 새 일정 만들기
           </Button>
+          {canManage && <DeleteItineraryButton id={id} redirectTo="/plan/mine" />}
         </div>
       </div>
 
@@ -49,7 +60,7 @@ export default async function PlanResultPage({
         </p>
       </div>
 
-      <ItineraryView itinerary={itinerary} />
+      <ItineraryView itinerary={itinerary} itineraryId={id} canManage={canManage} />
 
       <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border bg-muted/30 p-6 text-center">
         <p className="font-medium">이 일정이 마음에 드셨나요?</p>

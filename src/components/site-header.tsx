@@ -2,10 +2,13 @@ import Link from "next/link";
 import { Plane } from "lucide-react";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
+import { MobileNav } from "@/components/mobile-nav";
 
 const NAV_LINKS = [
   { href: "/", label: "홈" },
   { href: "/plan/new", label: "일정 만들기" },
+  { href: "/plan/mine", label: "내 일정" },
+  { href: "/places", label: "장소 둘러보기" },
   { href: "/dashboard", label: "대시보드" },
   { href: "/reviews", label: "후기" },
 ];
@@ -43,6 +46,7 @@ export function SiteHeader() {
               <Button size="sm">일정 만들기</Button>
             </SignInButton>
           </Show>
+          <MobileNav links={NAV_LINKS} />
         </div>
       </div>
     </header>

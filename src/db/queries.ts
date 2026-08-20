@@ -1,8 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { itineraries, reviews } from "@/db/schema";
-import type { Itinerary, ItineraryDay, Review, TripTips } from "@/lib/types";
+import { itineraries, placeTourismDetails, places, regions, reviews } from "@/db/schema";
+import type { Itinerary, ItineraryDay, ItineraryItem, Review, TripTips } from "@/lib/types";
 import { normalizeTripPurposes, PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
+import { getHomepageDisplayStatus, isCoordinateReliable, type HomepageDisplay } from "@/lib/tour-api/quality";
 
 const EMPTY_TRIP_TIPS: TripTips = { climate: "", packingList: [], recentIssues: [] };
 
@@ -192,4 +193,206 @@ export async function getDashboardData(days = 30): Promise<DashboardData> {
       .map(([id, value]) => ({ name: PURPOSE_LABELS[id], value }))
       .sort((a, b) => b.value - a.value),
   };
+}
+
+export interface PlaceWithDetails {
+  id: string;
+  name: string;
+  category: string;
+  address: string | null;
+  lat: string | null;
+  lng: string | null;
+  /** quality.ts isCoordinateReliable() 판정 결과 — false면 지도/좌표 의존 UI에서 제외
+   *  대상(docs/PHASE3K_QUALITY_POLICY.md §5.3). lat/lng 원본값은 그대로 함께 반환한다. */
+  coordinateReliable: boolean;
+  /** quality.ts getHomepageDisplayStatus() 판정 결과 — CLICKABLE이 아니면 url은 항상 null,
+   *  원본 HTML을 이 함수 밖으로 내보내지 않는다(§6.4/§7). */
+  homepage: HomepageDisplay;
+  tel: string | null;
+  overview: string | null;
+  externalContentTypeId: string | null;
+  /** place_tourism_details.detail_data 원본(유형별 필드가 달라 공통 스키마로 만들지 않음,
+   *  PHASE3H §11.1). 해당 place의 상세정보가 없으면 null. */
+  detailData: unknown | null;
+}
+
+/**
+ * TourAPI 출처(place.externalSource='tour_api') place를 region.code 기준으로 조회한다
+ * (PHASE 3-L-1). places + place_tourism_details를 조인하고, quality.ts의 조회 시점 판정
+ * 함수(getHomepageDisplayStatus/isCoordinateReliable)를 매핑 단계에서 한 번만 적용해
+ * 반환한다 — 원본 lat/lng/homepage 컬럼은 그대로 함께 내려주고 원본을 변형하지 않는다.
+ * DB는 READ-ONLY로만 접근한다(SELECT뿐, INSERT/UPDATE/DELETE 없음).
+ */
+export async function getPlacesByRegion(regionCode: string): Promise<PlaceWithDetails[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: places.id,
+      name: places.name,
+      category: places.category,
+      address: places.address,
+      lat: places.lat,
+      lng: places.lng,
+      homepage: places.homepage,
+      tel: places.tel,
+      overview: places.overview,
+      externalContentTypeId: places.externalContentTypeId,
+      detailData: placeTourismDetails.detailData,
+    })
+    .from(places)
+    .innerJoin(regions, eq(places.regionId, regions.id))
+    .leftJoin(
+      placeTourismDetails,
+      and(eq(placeTourismDetails.placeId, places.id), eq(placeTourismDetails.contentTypeId, places.externalContentTypeId))
+    )
+    .where(and(eq(regions.code, regionCode), eq(places.externalSource, "tour_api")));
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    address: row.address,
+    lat: row.lat,
+    lng: row.lng,
+    coordinateReliable: isCoordinateReliable(row.lat, row.lng),
+    homepage: getHomepageDisplayStatus(row.homepage),
+    tel: row.tel,
+    overview: row.overview,
+    externalContentTypeId: row.externalContentTypeId,
+    detailData: row.detailData ?? null,
+  }));
+}
+
+const PLACE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * TourAPI 출처 place 1건을 id(uuid)로 조회한다(PHASE 3-L-2, /places/[id] 상세 페이지용).
+ * getPlacesByRegion()과 동일한 조인/매핑 로직을 쓰지만, getPlacesByRegion() 자체는
+ * 수정하지 않고 별도 함수로 둔다 — 반환 1건이라 필터 조건만 다를 뿐 로직은 그대로다.
+ * 잘못된 형식의 id는 DB에 보내지 않고 즉시 null을 반환한다(getItinerary()의 UUID_RE
+ * 검사와 동일 패턴).
+ */
+export async function getPlaceById(id: string): Promise<PlaceWithDetails | null> {
+  if (!PLACE_ID_RE.test(id)) return null;
+
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: places.id,
+      name: places.name,
+      category: places.category,
+      address: places.address,
+      lat: places.lat,
+      lng: places.lng,
+      homepage: places.homepage,
+      tel: places.tel,
+      overview: places.overview,
+      externalContentTypeId: places.externalContentTypeId,
+      detailData: placeTourismDetails.detailData,
+    })
+    .from(places)
+    .leftJoin(
+      placeTourismDetails,
+      and(eq(placeTourismDetails.placeId, places.id), eq(placeTourismDetails.contentTypeId, places.externalContentTypeId))
+    )
+    .where(and(eq(places.id, id), eq(places.externalSource, "tour_api")))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    address: row.address,
+    lat: row.lat,
+    lng: row.lng,
+    coordinateReliable: isCoordinateReliable(row.lat, row.lng),
+    homepage: getHomepageDisplayStatus(row.homepage),
+    tel: row.tel,
+    overview: row.overview,
+    externalContentTypeId: row.externalContentTypeId,
+    detailData: row.detailData ?? null,
+  };
+}
+
+/**
+ * TourAPI place 1건을 사용자 소유 일정의 1일차에 추가한다(TOUR PLACE → ITINERARY v1).
+ * 좌표는 isCoordinateReliable() 판정을 그대로 신뢰한다 — 재검증하지 않고 place 객체에
+ * 이미 계산된 값(getPlaceById()/getPlacesByRegion() 반환값)을 사용, 신뢰 불가 좌표는
+ * location을 null로 남겨 지도에 잘못된 마커가 찍히지 않게 한다. TourAPI 원본 데이터를
+ * 일정 쪽에 중복 저장하지 않고 place.id만 참조로 남긴다(placeId, src/lib/types.ts).
+ * deleteItinerary()와 동일하게 (id, userId) 둘 다 일치해야만 수정한다 — 소유자 확인.
+ */
+export async function addPlaceToItinerary(
+  itineraryId: string,
+  userId: string,
+  place: PlaceWithDetails,
+  day: number,
+  /** AI ITINERARY GENERATION v1 — AI가 이 장소를 이 날짜/순서에 넣은 이유를 item.description에
+   *  싣고 싶을 때만 넘긴다. 생략하면 기존과 동일하게 place.overview를 그대로 쓴다(하위 호환,
+   *  기존 호출부 전부 무수정으로 계속 동작). */
+  overrides?: { time?: string; description?: string }
+): Promise<boolean> {
+  const db = getDb();
+  const [row] = await db
+    .select({ days: itineraries.days })
+    .from(itineraries)
+    .where(and(eq(itineraries.id, itineraryId), eq(itineraries.userId, userId)))
+    .limit(1);
+  if (!row) return false;
+
+  const days = (row.days as ItineraryDay[] | null) ?? [];
+
+  const newItem: ItineraryItem = {
+    time: overrides?.time ?? "",
+    title: place.name,
+    description: overrides?.description ?? place.overview ?? "",
+    tags: [],
+    sources: [],
+    location:
+      place.coordinateReliable && place.lat !== null && place.lng !== null
+        ? { lat: Number(place.lat), lng: Number(place.lng) }
+        : null,
+    placeId: place.id,
+  };
+
+  const hasTargetDay = days.some((d) => d.day === day);
+  const nextDays: ItineraryDay[] = hasTargetDay
+    ? days.map((d) => (d.day === day ? { ...d, items: [...d.items, newItem] } : d))
+    : [...days, { day, label: `${day}일차`, items: [newItem] }].sort((a, b) => a.day - b.day);
+
+  await db.update(itineraries).set({ days: nextDays }).where(eq(itineraries.id, itineraryId));
+  return true;
+}
+
+/**
+ * addPlaceToItinerary()로 추가된 TourAPI 장소 항목을 일정에서 제거한다
+ * (ITINERARY PLACE MANAGEMENT v1). placeId 기준으로 식별한다 — 일반 인덱스가 아니라
+ * placeId로 지운다. 같은 날에 같은 place가 중복 추가된 경우 전부 제거된다(v1 범위 밖,
+ * 중복 방지 자체는 이번에 다루지 않음). addPlaceToItinerary()와 동일하게 (id, userId)
+ * 소유자 확인을 거친다.
+ */
+export async function removePlaceFromItinerary(
+  itineraryId: string,
+  userId: string,
+  day: number,
+  placeId: string
+): Promise<boolean> {
+  const db = getDb();
+  const [row] = await db
+    .select({ days: itineraries.days })
+    .from(itineraries)
+    .where(and(eq(itineraries.id, itineraryId), eq(itineraries.userId, userId)))
+    .limit(1);
+  if (!row) return false;
+
+  const days = (row.days as ItineraryDay[] | null) ?? [];
+  const nextDays = days.map((d) =>
+    d.day === day ? { ...d, items: d.items.filter((item) => item.placeId !== placeId) } : d
+  );
+
+  await db.update(itineraries).set({ days: nextDays }).where(eq(itineraries.id, itineraryId));
+  return true;
 }

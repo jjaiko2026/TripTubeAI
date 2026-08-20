@@ -1,0 +1,131 @@
+import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
+import { SignInButton } from "@clerk/nextjs";
+import { ArrowLeft, Sparkles } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { generateItineraryFromPlacesAction } from "@/lib/actions";
+import { ALL_PURPOSE_IDS, PURPOSE_LABELS } from "@/lib/purposes";
+
+// /places, /places/recommend와 동일한 3개 값(getPlacesByRegion()이 기대하는 regions.code).
+// 3줄뿐이라 완성된 다른 페이지들을 건드리지 않기 위해 여기서도 그대로 재정의한다.
+const REGIONS = [
+  { code: "KR-SEOUL-CITY", label: "서울" },
+  { code: "KR-JEJU-JEJUSI", label: "제주시" },
+  { code: "KR-JEJU-SEOGWIPO", label: "서귀포시" },
+] as const;
+
+export default async function PlacesPlanPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ region?: string; error?: string }>;
+}) {
+  const params = await searchParams;
+  const { userId } = await auth();
+  const defaultRegion = REGIONS.find((r) => r.code === params.region)?.code ?? REGIONS[0].code;
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+      <Link
+        href="/places"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        장소 목록으로
+      </Link>
+
+      <div className="mb-6">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+          <Sparkles className="h-6 w-6 text-primary" />
+          AI 일정 만들기
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          지역과 기간, 여행 취향을 알려주시면 AI가 TourAPI 장소로 날짜별 일정을 짜드려요.
+        </p>
+      </div>
+
+      {!userId ? (
+        <div className="flex flex-col items-center gap-3 rounded-xl border bg-accent/40 px-6 py-6 text-center">
+          <p className="text-sm text-muted-foreground">일정을 저장하려면 로그인이 필요해요.</p>
+          <SignInButton mode="redirect" forceRedirectUrl="/places/plan">
+            <Button>로그인하고 AI 일정 만들기</Button>
+          </SignInButton>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            {params.error && (
+              <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                AI가 일정을 만들지 못했어요. 조건을 바꿔 다시 시도해 주세요.
+              </p>
+            )}
+            <form action={generateItineraryFromPlacesAction} className="flex flex-col gap-4">
+              <div className="space-y-1.5">
+                <label htmlFor="regionCode" className="text-sm font-medium">
+                  지역
+                </label>
+                <select
+                  id="regionCode"
+                  name="regionCode"
+                  defaultValue={defaultRegion}
+                  className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                >
+                  {REGIONS.map((region) => (
+                    <option key={region.code} value={region.code}>
+                      {region.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="nights" className="text-sm font-medium">
+                  숙박(박)
+                </label>
+                <input
+                  id="nights"
+                  name="nights"
+                  type="number"
+                  min={0}
+                  max={6}
+                  defaultValue={2}
+                  className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-sm font-medium">여행 목적(선택)</span>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {ALL_PURPOSE_IDS.map((id) => (
+                    <label key={id} className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" name="purposes" value={id} className="h-4 w-4 rounded border-input" />
+                      {PURPOSE_LABELS[id]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="notes" className="text-sm font-medium">
+                  요청사항(선택)
+                </label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  rows={2}
+                  placeholder="예: 걷기 편한 코스로, 맛집 위주로"
+                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm"
+                />
+              </div>
+
+              <Button type="submit" className="w-fit">
+                <Sparkles className="h-4 w-4" />
+                AI 일정 만들기
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

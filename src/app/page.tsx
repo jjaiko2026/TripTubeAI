@@ -95,6 +95,12 @@ export default async function Home() {
               예시 먼저 보기
             </Button>
           </div>
+          <Link
+            href="/places"
+            className="mt-4 inline-flex items-center gap-1 text-sm text-white/80 underline-offset-4 hover:text-white hover:underline"
+          >
+            <MapPin className="h-3.5 w-3.5" /> 실제 관광지 데이터로 장소 둘러보기
+          </Link>
         </div>
       </section>
 

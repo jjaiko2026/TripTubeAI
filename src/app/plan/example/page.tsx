@@ -61,7 +61,7 @@ export default async function PlanExamplePage() {
         </p>
       </div>
 
-      <ItineraryView itinerary={itinerary} />
+      <ItineraryView itinerary={itinerary} itineraryId="example" canManage={false} />
     </div>
   );
 }
