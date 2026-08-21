@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { getPlacesByRegion } from "@/db/queries";
+import { getConfirmedRegionalCourses } from "@/db/knowledge-queries";
 import { PlaceCard } from "@/components/places/place-card";
 import { PlacesMap } from "@/components/places/places-map";
+import { ConfirmedCourseSection } from "@/components/places/confirmed-course-section";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +37,10 @@ export default async function PlacesPage({
   const params = await searchParams;
   const regionCode = resolveRegionCode(params.region);
   const activeRegion = REGIONS.find((r) => r.code === regionCode)!;
-  const places = await getPlacesByRegion(regionCode);
+  const [places, confirmedCourses] = await Promise.all([
+    getPlacesByRegion(regionCode),
+    getConfirmedRegionalCourses(regionCode),
+  ]);
 
   const sections = SECTION_ORDER.map((section) => ({
     ...section,
@@ -72,6 +77,8 @@ export default async function PlacesPage({
           </Link>
         ))}
       </div>
+
+      <ConfirmedCourseSection courses={confirmedCourses} regionLabel={activeRegion.label} />
 
       <div className="mb-10">
         <h2 className="mb-4 text-lg font-medium">지도</h2>
