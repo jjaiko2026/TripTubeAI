@@ -64,7 +64,7 @@ export async function importKnowledgeSheetAction() {
     console.error("Knowledge sheet import failed:", error);
     redirect("/dashboard?sheets=error");
   }
-  const issues =
-    result.duplicate + result.invalidId + result.notFound + result.invalidValue + result.policyViolation + result.checkViolation;
+  // PHASE 11-2: confirmedWithoutPlaceId는 더 이상 실패/차단이 아니라 정보용 통계이므로 issues에 합산하지 않는다.
+  const issues = result.duplicate + result.invalidId + result.notFound + result.invalidValue + result.checkViolation;
   redirect(`/dashboard?sheets=knowledge-imported&updated=${result.updated}&skipped=${result.skipped}&issues=${issues}`);
 }

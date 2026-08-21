@@ -262,8 +262,8 @@ export const videoKnowledge = pgTable(
     status: text("status").notNull().default("unverified"), // "confirmed" | "review" | "unverified" | "rejected"
     // PHASE 10-0 Knowledge Review Contract Q1-Q8 — 사람 검수 결과를 재현 가능하게 남긴다.
     // "장소를 텍스트로 식별할 수 있는가"(placeIdentifiable)와 "실제 Place FK가 매칭됐는가"(placeId)는
-    // 서로 다른 질문이다 — confirmed 판정은 placeId가 실제로 채워졌을 때만 가능하다(place/food/
-    // accommodation/shopping/experience 타입에 한함, 앱 레벨 규칙 — course/transport/info는 면제).
+    // 서로 다른 질문이다 — PHASE 11-2부터 confirmed는 콘텐츠 검수(Q1/Q2/Q3/Q5/Q6) 통과만으로
+    // 가능하며, placeId 매칭(Place Resolution)은 독립된 후속 단계로 분리한다(모든 knowledgeType 동일).
     evidenceConfirmed: text("evidence_confirmed"), // Q1: "yes" | "partial" | "no"
     contentAccuracy: text("content_accuracy"), // Q2: "yes" | "needs_fix" | "no"
     regionRelevance: text("region_relevance"), // Q3: "yes" | "partial" | "no"

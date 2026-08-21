@@ -11,6 +11,11 @@
  * service_value/recommendation_safety) + Q7(admin_status) + Q8(review_note)만 되돌려 쓴다.
  * reviewer/reviewed_at은 시트에 입력받지 않는다 — 손으로 적은 이름/시각을 신뢰하는 대신,
  * import를 실행한 관리자(Clerk 인증된 userId)와 실행 시각을 서버가 직접 기록한다.
+ *
+ * PHASE 11-2 — "콘텐츠 검수 완료(confirmed)"와 "Place Resolution(place_id 매칭)"을 독립 단계로
+ * 분리한다. confirmed는 Q1/Q2/Q3/Q5/Q6 통과 + reviewer/reviewed_at만 있으면 knowledgeType과
+ * 무관하게 가능하다. place_id 유무는 더 이상 confirmed를 막지 않고, PLACE_REQUIRED_KNOWLEDGE_TYPES는
+ * Place Resolution이 아직 필요한 행 규모를 세는 통계용으로만 쓰인다.
  */
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -92,8 +97,10 @@ const REVIEW_FIELDS: ReviewField[] = [
 const STATUS_OPTIONS = ["confirmed", "review", "rejected"] as const;
 const VALID_STATUS = new Set<string>(STATUS_OPTIONS);
 
-// confirmed 판정 시 실제 Place FK 매칭을 요구하는 knowledge_type — 단일 장소를 가리키지 않는
-// course/transport/info는 제외한다 (PHASE 10-0 앱 레벨 규칙, DB CHECK에는 넣지 않기로 결정).
+// PHASE 11-2 — confirmed의 필수조건이 아니라, Place Resolution(place_id 매칭)이 아직 필요한
+// knowledge_type을 표시하는 통계용 집합이다. 단일 장소를 가리키지 않는 course/transport/info는
+// 제외한다. (과거 PHASE 10-0에서는 이 집합을 confirmed 차단 조건으로 썼으나, 콘텐츠 검수와
+// Place Resolution을 분리하면서 confirmed 여부와는 무관해졌다.)
 const PLACE_REQUIRED_KNOWLEDGE_TYPES = new Set(["place", "food", "accommodation", "shopping", "experience"]);
 
 /** video_knowledge 전체를 KNOWLEDGE_REVIEW 시트로 내보낸다(기존 시트 내용은 덮어씀). */
@@ -138,8 +145,8 @@ export interface ImportKnowledgeReviewResult {
   invalidId: number;
   notFound: number;
   invalidValue: number; // Q1~Q7 중 정의된 값 집합에 없는 값이 입력됨
-  policyViolation: number; // 장소 식별이 필요한 타입인데 confirmed 요청 시 place_id가 비어 있음
-  checkViolation: number; // 위 사전 검증을 통과했는데도 DB CHECK 제약에 걸림(안전망)
+  confirmedWithoutPlaceId: number; // 정보용 통계(차단 아님) — 장소 식별이 필요한 타입인데 place_id 없이 confirmed로 반영된 행 수, Place Resolution 대상 규모 파악용
+  checkViolation: number; // 사전 검증을 통과했는데도 DB CHECK 제약에 걸림(안전망)
 }
 
 /**
@@ -158,7 +165,8 @@ export interface ImportKnowledgeReviewResult {
  * - DB에 존재하지 않는 id → notFound
  * - Q1~Q7 중 정의된 값 집합에 없는 값(빈칸 제외) → invalidValue
  * - admin_status='confirmed'인데 장소 식별이 필요한 타입(place/food/accommodation/shopping/
- *   experience)이면서 place_id가 비어 있으면 → policyViolation (DB에 쓰지 않음)
+ *   experience)이면서 place_id가 비어 있어도 confirmed로 반영한다(PHASE 11-2 — 콘텐츠 검수와
+ *   Place Resolution은 독립 단계). 이때 confirmedWithoutPlaceId만 증가시키고 UPDATE는 그대로 진행한다.
  * - 각 행은 독립적으로 처리한다 — 한 행의 예외가 나머지 행 처리를 막지 않는다.
  *
  * dryRun=true면 실제 UPDATE 없이 결과만 미리 계산한다.
@@ -176,7 +184,7 @@ export async function importKnowledgeStatusFromSheet(
     invalidId: 0,
     notFound: 0,
     invalidValue: 0,
-    policyViolation: 0,
+    confirmedWithoutPlaceId: 0,
     checkViolation: 0,
   };
 
@@ -278,8 +286,9 @@ export async function importKnowledgeStatusFromSheet(
       PLACE_REQUIRED_KNOWLEDGE_TYPES.has(existingRow.knowledgeType) &&
       !existingRow.placeId
     ) {
-      result.policyViolation++;
-      continue;
+      // PHASE 11-2: 더 이상 confirmed를 막지 않는다 — Place Resolution 대상 규모를 보여주는
+      // 통계로만 집계하고 아래에서 정상적으로 UPDATE를 진행한다.
+      result.confirmedWithoutPlaceId++;
     }
 
     update.reviewer = reviewerId;
@@ -298,7 +307,7 @@ export async function importKnowledgeStatusFromSheet(
         else result.updated++;
       }
     } catch (error) {
-      // CHECK 제약 위반 등 — 사전 검증(policyViolation)을 통과했는데도 DB가 거부한 경우의 안전망.
+      // CHECK 제약 위반 등 — 위 사전 검증을 모두 통과했는데도 DB가 거부한 경우의 안전망.
       result.checkViolation++;
       console.error(`video_knowledge 검수 반영 실패 (id=${id}):`, error);
     }

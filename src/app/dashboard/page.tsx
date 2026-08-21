@@ -38,7 +38,7 @@ export default async function DashboardPage({
         : params.sheets === "knowledge-exported"
           ? `KNOWLEDGE_REVIEW 시트로 ${params.count}개 항목을 내보냈어요.`
           : params.sheets === "knowledge-imported"
-            ? `검수 반영 ${params.updated}건, 미입력 ${params.skipped}건${Number(params.issues) > 0 ? `, 확인 필요 ${params.issues}건(중복/형식오류/정책위반 등)` : ""}.`
+            ? `검수 반영 ${params.updated}건, 미입력 ${params.skipped}건${Number(params.issues) > 0 ? `, 확인 필요 ${params.issues}건(중복/형식오류 등)` : ""}.`
             : params.sheets === "error"
               ? "시트 연동 중 오류가 발생했어요. 환경변수와 시트 공유 설정을 확인해주세요."
               : null;
