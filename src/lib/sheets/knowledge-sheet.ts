@@ -16,6 +16,11 @@
  * 분리한다. confirmed는 Q1/Q2/Q3/Q5/Q6 통과 + reviewer/reviewed_at만 있으면 knowledgeType과
  * 무관하게 가능하다. place_id 유무는 더 이상 confirmed를 막지 않고, PLACE_REQUIRED_KNOWLEDGE_TYPES는
  * Place Resolution이 아직 필요한 행 규모를 세는 통계용으로만 쓰인다.
+ *
+ * PHASE 12-5 — import를 "시트 스냅샷 전체 재적용"에서 "DB와 실제로 다른 값만 반영하는 diff
+ * 방식"으로 바꾼다. Sheets 값이 DB 현재값과 완전히 같으면 UPDATE 자체를 실행하지 않고
+ * reviewer/reviewed_at도 건드리지 않는다(unchanged로만 집계) — 재실행할 때마다 이미 검수된
+ * 행의 reviewed_at이 흔들리던 문제(PHASE 12-4에서 실제 관찰됨)를 근본적으로 막기 위함이다.
  */
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -140,6 +145,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export interface ImportKnowledgeReviewResult {
   total: number;
   updated: number;
+  unchanged: number; // PHASE 12-5 — Sheets 값이 DB 현재값과 완전히 같아 UPDATE를 실행하지 않은 행 수(reviewer/reviewed_at도 불변)
   skipped: number;
   duplicate: number;
   invalidId: number;
@@ -156,7 +162,9 @@ export interface ImportKnowledgeReviewResult {
  *
  * reviewerId: import를 실행하는 관리자의 식별자(Clerk userId). 시트에서 읽지 않고 호출자가
  * 넘긴다 — 손으로 적은 이름을 신뢰하지 않기 위해서다. 이 행에 대해 하나라도 검수 입력(Q1~Q8 중
- * 하나라도 비어있지 않음)이 있으면 reviewer/reviewed_at을 이 값과 현재 시각으로 채운다.
+ * 하나라도 비어있지 않음)이 있고, 그 값이 DB 현재값과 실제로 다를 때만 reviewer/reviewed_at을
+ * 이 값과 현재 시각으로 채운다(PHASE 12-5 — diff 기반. 완전히 동일하면 UPDATE 자체를 실행하지
+ * 않고 unchanged로만 집계, reviewer/reviewed_at도 손대지 않는다).
  *
  * 안전 규칙:
  * - 빈 id, 또는 Q1~Q8 전부 빈칸 → skip (변경 없음이 정상 동작)
@@ -164,6 +172,8 @@ export interface ImportKnowledgeReviewResult {
  * - uuid 형식이 아닌 id → invalidId
  * - DB에 존재하지 않는 id → notFound
  * - Q1~Q7 중 정의된 값 집합에 없는 값(빈칸 제외) → invalidValue
+ * - Q1~Q8(status 포함) 중 시트에 채워진 값이 DB 현재값과 전부 동일 → unchanged (UPDATE 미실행,
+ *   reviewer/reviewed_at 불변). 하나라도 다르면 그 필드들만 UPDATE 대상에 포함한다.
  * - admin_status='confirmed'인데 장소 식별이 필요한 타입(place/food/accommodation/shopping/
  *   experience)이면서 place_id가 비어 있어도 confirmed로 반영한다(PHASE 11-2 — 콘텐츠 검수와
  *   Place Resolution은 독립 단계). 이때 confirmedWithoutPlaceId만 증가시키고 UPDATE는 그대로 진행한다.
@@ -179,6 +189,7 @@ export async function importKnowledgeStatusFromSheet(
   const result: ImportKnowledgeReviewResult = {
     total: 0,
     updated: 0,
+    unchanged: 0,
     skipped: 0,
     duplicate: 0,
     invalidId: 0,
@@ -214,13 +225,10 @@ export async function importKnowledgeStatusFromSheet(
 
   const db = getDb();
   const candidateIds = [...idOccurrences.keys()].filter((id) => UUID_RE.test(id) && !duplicateIds.has(id));
+  // PHASE 12-5: diff 비교를 위해 Q1~Q8/status까지 포함한 전체 행을 가져온다(과거엔
+  // id/knowledgeType/placeId 세 컬럼만 가져와 비교 자체가 불가능했다).
   const existing =
-    candidateIds.length === 0
-      ? []
-      : await db
-          .select({ id: videoKnowledge.id, knowledgeType: videoKnowledge.knowledgeType, placeId: videoKnowledge.placeId })
-          .from(videoKnowledge)
-          .where(inArray(videoKnowledge.id, candidateIds));
+    candidateIds.length === 0 ? [] : await db.select().from(videoKnowledge).where(inArray(videoKnowledge.id, candidateIds));
   const existingById = new Map(existing.map((row) => [row.id, row]));
 
   const cell = (row: string[], col: (typeof HEADER)[number]): string => {
@@ -246,7 +254,8 @@ export async function importKnowledgeStatusFromSheet(
     const reviewNoteRaw = cell(row, "review_note");
     const statusRaw = cell(row, "admin_status");
 
-    const update: Partial<typeof videoKnowledge.$inferInsert> = {};
+    // 시트에 채워진 값을 그대로 파싱한 "제안값" — 아직 DB와 비교하기 전 단계다.
+    const rawUpdate: Partial<typeof videoKnowledge.$inferInsert> = {};
     let invalid = false;
     for (const field of REVIEW_FIELDS) {
       const label = cell(row, field.column);
@@ -256,20 +265,20 @@ export async function importKnowledgeStatusFromSheet(
         invalid = true;
         continue;
       }
-      update[field.dbColumn] = code;
+      rawUpdate[field.dbColumn] = code;
     }
     if (statusRaw) {
       if (!VALID_STATUS.has(statusRaw)) invalid = true;
-      else update.status = statusRaw;
+      else rawUpdate.status = statusRaw;
     }
-    if (reviewNoteRaw) update.reviewNote = reviewNoteRaw;
+    if (reviewNoteRaw) rawUpdate.reviewNote = reviewNoteRaw;
 
     if (invalid) {
       result.invalidValue++;
       continue;
     }
 
-    const hasReviewInput = Object.keys(update).length > 0;
+    const hasReviewInput = Object.keys(rawUpdate).length > 0;
     if (!hasReviewInput) {
       result.skipped++;
       continue;
@@ -281,8 +290,22 @@ export async function importKnowledgeStatusFromSheet(
       continue;
     }
 
+    // PHASE 12-5: rawUpdate 중 DB 현재값과 실제로 다른 필드만 골라낸다. 전부 동일하면
+    // UPDATE 자체를 실행하지 않고 unchanged로 집계한다 — reviewer/reviewed_at도 손대지 않는다.
+    const changedUpdate: Partial<typeof videoKnowledge.$inferInsert> = {};
+    for (const key of Object.keys(rawUpdate) as (keyof typeof rawUpdate)[]) {
+      if (rawUpdate[key] !== existingRow[key as keyof typeof existingRow]) {
+        (changedUpdate as Record<string, unknown>)[key] = rawUpdate[key];
+      }
+    }
+
+    if (Object.keys(changedUpdate).length === 0) {
+      result.unchanged++;
+      continue;
+    }
+
     if (
-      update.status === "confirmed" &&
+      changedUpdate.status === "confirmed" &&
       PLACE_REQUIRED_KNOWLEDGE_TYPES.has(existingRow.knowledgeType) &&
       !existingRow.placeId
     ) {
@@ -291,8 +314,8 @@ export async function importKnowledgeStatusFromSheet(
       result.confirmedWithoutPlaceId++;
     }
 
-    update.reviewer = reviewerId;
-    update.reviewedAt = new Date();
+    changedUpdate.reviewer = reviewerId;
+    changedUpdate.reviewedAt = new Date();
 
     try {
       if (dryRun) {
@@ -300,7 +323,7 @@ export async function importKnowledgeStatusFromSheet(
       } else {
         const updatedRows = await db
           .update(videoKnowledge)
-          .set(update)
+          .set(changedUpdate)
           .where(eq(videoKnowledge.id, id))
           .returning({ id: videoKnowledge.id });
         if (updatedRows.length === 0) result.notFound++;
