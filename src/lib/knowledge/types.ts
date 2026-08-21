@@ -30,7 +30,7 @@ export type VideoPipelineStatus =
   | "verified";
 
 /** video_knowledge.status — AI 추출 지식의 신뢰 상태 (docs/KNOWLEDGE_EXTRACTION.md §5) */
-export type KnowledgeStatus = "confirmed" | "review" | "unverified";
+export type KnowledgeStatus = "confirmed" | "review" | "unverified" | "rejected";
 
 export type ExtractionMethod = "ai" | "manual";
 export type Confidence = "high" | "medium" | "low";

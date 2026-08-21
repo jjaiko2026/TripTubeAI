@@ -259,7 +259,20 @@ export const videoKnowledge = pgTable(
     // 원문의 어느 부분에서 나왔는지(가능하면 인용, 최소한 "제목/설명 중 어디" 구분).
     sourceReference: text("source_reference"),
     confidence: text("confidence"), // "high" | "medium" | "low", AI 추출일 때만
-    status: text("status").notNull().default("unverified"), // "confirmed" | "review" | "unverified"
+    status: text("status").notNull().default("unverified"), // "confirmed" | "review" | "unverified" | "rejected"
+    // PHASE 10-0 Knowledge Review Contract Q1-Q8 — 사람 검수 결과를 재현 가능하게 남긴다.
+    // "장소를 텍스트로 식별할 수 있는가"(placeIdentifiable)와 "실제 Place FK가 매칭됐는가"(placeId)는
+    // 서로 다른 질문이다 — confirmed 판정은 placeId가 실제로 채워졌을 때만 가능하다(place/food/
+    // accommodation/shopping/experience 타입에 한함, 앱 레벨 규칙 — course/transport/info는 면제).
+    evidenceConfirmed: text("evidence_confirmed"), // Q1: "yes" | "partial" | "no"
+    contentAccuracy: text("content_accuracy"), // Q2: "yes" | "needs_fix" | "no"
+    regionRelevance: text("region_relevance"), // Q3: "yes" | "partial" | "no"
+    placeIdentifiable: text("place_identifiable"), // Q4: "yes" | "candidate" | "no", 검수자가 Q4에 답한 값
+    serviceValue: text("service_value"), // Q5: "yes" | "low" | "no"
+    recommendationSafety: text("recommendation_safety"), // Q6: "safe" | "caution" | "unsafe"
+    reviewer: text("reviewer"), // 검수자 식별자(이메일 등), 검수 전에는 null
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }), // 검수 시각, 검수 전에는 null
+    reviewNote: text("review_note"), // Q8 — 다른 검수자가 재현 가능하도록 남기는 한 줄 근거
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -272,6 +285,23 @@ export const videoKnowledge = pgTable(
     check(
       "video_knowledge_exactly_one_origin_check",
       sql`(${table.videoId} IS NOT NULL) <> (${table.sourceRefId} IS NOT NULL)`
+    ),
+    // PHASE 10-0 Q7 confirmed 조건: Q1/Q2/Q3/Q5/Q6가 전부 통과값이어야 confirmed 가능.
+    // place_identifiable/placeId 조건은 여기 넣지 않는다(앱 레벨 규칙으로 유지하기로 결정).
+    check(
+      "video_knowledge_confirmed_requires_all_checks",
+      sql`${table.status} <> 'confirmed' OR (
+        ${table.evidenceConfirmed} = 'yes' AND
+        ${table.contentAccuracy} = 'yes' AND
+        ${table.regionRelevance} = 'yes' AND
+        ${table.serviceValue} = 'yes' AND
+        ${table.recommendationSafety} = 'safe'
+      )`
+    ),
+    // 검수가 끝난 상태(confirmed/review/rejected)라면 누가 언제 검수했는지 반드시 남아 있어야 한다.
+    check(
+      "video_knowledge_reviewed_status_requires_reviewer",
+      sql`${table.status} = 'unverified' OR (${table.reviewer} IS NOT NULL AND ${table.reviewedAt} IS NOT NULL)`
     ),
   ]
 );
