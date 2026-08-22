@@ -1,4 +1,4 @@
-import { and, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, isNotNull, notInArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { pipelineBEvents } from "@/db/schema";
 
@@ -59,21 +59,24 @@ export interface PipelineBUsageStats {
 }
 
 /**
- * PHASE 13-3 — pipeline_b_events를 직접 집계한다(별도 analytics 플랫폼 없음, mock 데이터
- * 없음). PIPELINE_B_TEST_USER_IDS에 있는 계정의 행은 항상 제외한다 — 단 userId가 null인
- * 익명 이벤트는 그대로 포함한다(NOT IN의 NULL 비교 함정을 피하려 OR isNull로 명시).
+ * PHASE 13-5 정책 — "로그인된 실제 사용자(userId)가 발생시킨 Pipeline B 이벤트만 공모전
+ * 실사용 성과로 집계한다." 익명(userId null) 이벤트는 익명 사용자를 서로 구분할 방법이
+ * 없어(PHASE 13-4 감사 결론 — anonymous_id/Clerk 내부 쿠키/identity merge 전부 이번 범위에서
+ * 하지 않기로 확정) 실사용 성과에서 항상 제외한다. PIPELINE_B_TEST_USER_IDS에 있는 계정의
+ * 행도 항상 제외한다. 시간 기준 컷오프는 쓰지 않는다 — 개발/검증이 계속되는 한 고정
+ * timestamp는 계속 재발하는 문제라 지속 가능한 기준이 아니기 때문(PHASE 13-4 실측 확인).
  */
 export async function getPipelineBUsageStats(): Promise<PipelineBUsageStats> {
   const db = getDb();
-  const excludeTestUser =
+  const realLoggedInUser =
     PIPELINE_B_TEST_USER_IDS.length > 0
-      ? or(isNull(pipelineBEvents.userId), notInArray(pipelineBEvents.userId, [...PIPELINE_B_TEST_USER_IDS]))
-      : undefined;
+      ? and(isNotNull(pipelineBEvents.userId), notInArray(pipelineBEvents.userId, [...PIPELINE_B_TEST_USER_IDS]))
+      : isNotNull(pipelineBEvents.userId);
 
   const byTypeRows = await db
     .select({ eventType: pipelineBEvents.eventType, count: sql<number>`count(*)` })
     .from(pipelineBEvents)
-    .where(excludeTestUser)
+    .where(realLoggedInUser)
     .groupBy(pipelineBEvents.eventType);
   const countByType = new Map(byTypeRows.map((r) => [r.eventType, Number(r.count)]));
 
@@ -84,13 +87,13 @@ export async function getPipelineBUsageStats(): Promise<PipelineBUsageStats> {
       count: sql<number>`count(*)`,
     })
     .from(pipelineBEvents)
-    .where(and(excludeTestUser, isNotNull(pipelineBEvents.regionCode)))
+    .where(and(realLoggedInUser, isNotNull(pipelineBEvents.regionCode)))
     .groupBy(pipelineBEvents.regionCode, pipelineBEvents.eventType);
 
   const [{ count: distinctUsers } = { count: 0 }] = await db
     .select({ count: sql<number>`count(distinct ${pipelineBEvents.userId})` })
     .from(pipelineBEvents)
-    .where(and(excludeTestUser, isNotNull(pipelineBEvents.userId)));
+    .where(realLoggedInUser);
 
   return {
     recommendExecuted: countByType.get("recommend_executed") ?? 0,

@@ -93,9 +93,11 @@ export default async function DashboardPage({
             <Badge variant="secondary">실제 데이터</Badge>
           </div>
           <CardDescription>
-            지역 선택 → AI 추천(TourAPI + Knowledge) → 장소 선택 → AI 일정 생성 흐름에서 실제로 발생한
-            이벤트만 <code className="text-xs">pipeline_b_events</code> 테이블에서 그대로 집계했어요. 아래
-            숫자는 목업이 아니며, Pipeline A(옛 유튜브/블로그 기반 일정 생성, <code className="text-xs">/plan/new</code>)의
+            지역 선택 → AI 추천(TourAPI + Knowledge) → 장소 선택 → AI 일정 생성 흐름에서{" "}
+            <strong>로그인한 실제 사용자</strong>가 발생시킨 이벤트만{" "}
+            <code className="text-xs">pipeline_b_events</code> 테이블에서 그대로 집계했어요(PHASE 13-5 정책 —
+            비로그인 익명 조회는 서로 다른 방문자를 구분할 방법이 없어 집계에서 제외해요). 아래 숫자는 목업이
+            아니며, Pipeline A(옛 유튜브/블로그 기반 일정 생성, <code className="text-xs">/plan/new</code>)의
             데이터는 이 표에 전혀 포함되지 않아요. 검증용 테스트 계정({PIPELINE_B_TEST_USER_IDS.length}개)의 기록도
             제외했어요.
           </CardDescription>
