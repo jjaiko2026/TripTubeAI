@@ -6,7 +6,7 @@ import { MobileNav } from "@/components/mobile-nav";
 
 const NAV_LINKS = [
   { href: "/", label: "홈" },
-  { href: "/plan/new", label: "일정 만들기" },
+  { href: "/places", label: "일정 만들기" },
   { href: "/plan/mine", label: "내 일정" },
   { href: "/places", label: "장소 둘러보기" },
   { href: "/dashboard", label: "대시보드" },
@@ -37,12 +37,12 @@ export function SiteHeader() {
             <UserButton />
           </Show>
           <Show when="signed-out">
-            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+            <SignInButton mode="redirect" forceRedirectUrl="/places">
               <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
                 로그인
               </Button>
             </SignInButton>
-            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
+            <SignInButton mode="redirect" forceRedirectUrl="/places">
               <Button size="sm">일정 만들기</Button>
             </SignInButton>
           </Show>

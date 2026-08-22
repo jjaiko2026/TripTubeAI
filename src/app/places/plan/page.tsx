@@ -18,11 +18,19 @@ const REGIONS = [
 export default async function PlacesPlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ region?: string; error?: string }>;
+  searchParams: Promise<{ region?: string; error?: string; selectedPlaceIds?: string | string[] }>;
 }) {
   const params = await searchParams;
   const { userId } = await auth();
   const defaultRegion = REGIONS.find((r) => r.code === params.region)?.code ?? REGIONS[0].code;
+  // PHASE 13-2 — /places/recommend의 선택 폼(place-select-form)이 GET으로 넘겨주는 값.
+  // 여기서는 그대로 hidden input으로 다시 실어 generateItineraryFromPlacesAction까지
+  // 전달만 한다 — 실제 검증(후보 목록에 있는 id인지)은 generateItineraryFromPlaces()가 한다.
+  const selectedPlaceIds = Array.isArray(params.selectedPlaceIds)
+    ? params.selectedPlaceIds
+    : params.selectedPlaceIds
+      ? [params.selectedPlaceIds]
+      : [];
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
@@ -60,6 +68,14 @@ export default async function PlacesPlanPage({
               </p>
             )}
             <form action={generateItineraryFromPlacesAction} className="flex flex-col gap-4">
+              {selectedPlaceIds.map((id) => (
+                <input key={id} type="hidden" name="selectedPlaceIds" value={id} />
+              ))}
+              {selectedPlaceIds.length > 0 && (
+                <p className="rounded-md border bg-accent/40 px-3 py-2 text-sm text-muted-foreground">
+                  추천에서 선택한 장소 {selectedPlaceIds.length}곳을 우선 반영해 일정을 만들어요.
+                </p>
+              )}
               <div className="space-y-1.5">
                 <label htmlFor="regionCode" className="text-sm font-medium">
                   지역

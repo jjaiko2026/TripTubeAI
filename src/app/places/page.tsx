@@ -55,11 +55,11 @@ export default async function PlacesPage({
           <p className="mt-1 text-sm text-muted-foreground">{activeRegion.label}의 관광지·문화시설·음식점을 둘러보세요.</p>
         </div>
         <div className="flex gap-2">
-          <Button render={<Link href="/places/recommend" />} variant="outline" size="sm">
+          <Button render={<Link href={`/places/recommend?region=${regionCode}`} />} variant="outline" size="sm">
             <Sparkles className="h-4 w-4" />
             AI 추천 받기
           </Button>
-          <Button render={<Link href="/places/plan" />} variant="outline" size="sm">
+          <Button render={<Link href={`/places/plan?region=${regionCode}`} />} variant="outline" size="sm">
             <Sparkles className="h-4 w-4" />
             AI 일정 만들기
           </Button>

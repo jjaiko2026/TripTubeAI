@@ -13,6 +13,7 @@ import {
   removePlaceFromItinerary,
   saveItinerary,
 } from "@/db/queries";
+import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import type { MemberType, Region, TripRequest } from "@/lib/types";
 import { normalizeTripPurposes, isPurposeId } from "@/lib/purposes";
 
@@ -71,6 +72,10 @@ export async function generateItineraryFromPlacesAction(formData: FormData) {
   const nights = Math.min(6, Math.max(0, Number(formData.get("nights") ?? 2)));
   const notes = String(formData.get("notes") ?? "").trim();
   const purposes = formData.getAll("purposes").map(String).filter(isPurposeId);
+  // PHASE 13-2 — /places/recommend에서 사용자가 체크한 장소 id들. 아직 후보 목록(이 지역의
+  // TourAPI candidates) 대조 전이라 여기서는 문자열 그대로만 모은다 — 검증은
+  // generateItineraryFromPlaces()가 담당한다.
+  const selectedPlaceIds = formData.getAll("selectedPlaceIds").map(String).filter(Boolean);
   if (!regionLabel) return;
 
   const itineraryId = await generateItineraryFromPlaces({
@@ -83,6 +88,7 @@ export async function generateItineraryFromPlacesAction(formData: FormData) {
     memberCount: 1,
     month: new Date().getMonth() + 1,
     userId,
+    selectedPlaceIds,
   });
 
   if (!itineraryId) {
@@ -124,6 +130,9 @@ export async function addPlaceToItineraryAction(formData: FormData) {
   if (!place) return;
 
   await addPlaceToItinerary(itineraryId, userId, place, day);
+  // await한다 — Vercel Functions는 응답 이후 즉시 인스턴스를 회수할 수 있어(fire-and-forget이면
+  // 이 insert가 완료 전에 잘릴 위험이 있음) 실사용 지표 신뢰성을 위해 완료를 기다린다.
+  await logPipelineBEvent({ eventType: "place_selected", userId, placeId, itineraryId });
   revalidatePath(`/plan/result/${itineraryId}`);
   revalidatePath(`/places/${placeId}`);
 }

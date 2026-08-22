@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPlaceById, getRecentItinerariesForUser } from "@/db/queries";
+import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
 import { getDetailFields } from "@/components/places/detail-field-labels";
 import { AddToItineraryDialog } from "@/components/places/add-to-itinerary-dialog";
@@ -37,6 +38,8 @@ export default async function PlaceDetailPage({
   const detailFields = getDetailFields(place.externalContentTypeId, place.detailData);
 
   const { userId } = await auth();
+  // await한다 — Vercel Functions에서 fire-and-forget은 응답 종료 시점에 잘릴 수 있다.
+  await logPipelineBEvent({ eventType: "place_detail_viewed", userId, placeId: place.id });
   // 최근 3건만 보여주는 /plan/new의 기본값(getRecentItinerariesForUser 자체는 무수정)과
   // 달리, 일정 선택 목록에서는 더 많이 보여주려고 limit만 늘려서 그대로 재사용한다.
   const userItineraries = userId ? await getRecentItinerariesForUser(userId, 20) : [];

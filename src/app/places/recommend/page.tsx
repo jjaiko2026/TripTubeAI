@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPlacesByRegion, getRecentItinerariesForUser } from "@/db/queries";
+import { getConfirmedRegionalKnowledge } from "@/db/knowledge-queries";
+import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import { recommendPlaces } from "@/lib/place-recommendation";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
 import { AddToItineraryDialog } from "@/components/places/add-to-itinerary-dialog";
@@ -59,8 +61,19 @@ export default async function RecommendPage({
   if (notes) currentSearch.set("notes", notes);
   const currentPath = `/places/recommend${currentSearch.toString() ? `?${currentSearch.toString()}` : ""}`;
 
+  if (hasSubmitted) {
+    // await한다 — Vercel Functions는 응답 완료 후 인스턴스를 즉시 회수할 수 있어 fire-and-forget이면
+    // insert가 중간에 잘릴 수 있다(logPipelineBEvent 자체는 실패를 삼켜 페이지 렌더링을 막지 않는다).
+    await logPipelineBEvent({ eventType: "recommend_executed", userId, regionCode });
+  }
+
   const recommendations = hasSubmitted
-    ? await recommendPlaces(await getPlacesByRegion(regionCode), purposes, notes)
+    ? await recommendPlaces(
+        await getPlacesByRegion(regionCode),
+        purposes,
+        notes,
+        await getConfirmedRegionalKnowledge(regionCode)
+      )
     : [];
 
   return (
@@ -155,46 +168,82 @@ export default async function RecommendPage({
               추천할 장소를 찾지 못했어요. 조건을 바꿔 다시 시도해 보세요.
             </p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {recommendations.map(({ place, reason }) => {
-                const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
-                return (
-                  <Card key={place.id} hover>
-                    <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-                      <div>
-                        <CardTitle>{place.name}</CardTitle>
-                        {place.address && <CardDescription className="mt-0.5">{place.address}</CardDescription>}
-                      </div>
-                      {typeLabel && (
-                        <Badge variant="secondary" className="shrink-0">
-                          {typeLabel}
-                        </Badge>
-                      )}
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-3">
-                      <p className="rounded-md border bg-muted/30 p-2.5 text-sm text-muted-foreground">
-                        <Sparkles className="mr-1 inline h-3.5 w-3.5 text-primary" />
-                        {reason}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <a href={`/places/${place.id}`} className="text-sm text-primary hover:underline">
-                          장소 상세 페이지 보기
-                        </a>
-                        {userId ? (
-                          <AddToItineraryDialog placeId={place.id} itineraries={userItineraries} />
-                        ) : (
-                          <SignInButton mode="redirect" forceRedirectUrl={currentPath}>
-                            <Button variant="outline" size="sm">
-                              로그인하고 일정에 추가
-                            </Button>
-                          </SignInButton>
+            <>
+              {/* PHASE 13-2 — 체크한 장소를 /places/plan으로 그대로 넘겨 AI 일정 생성의 핵심
+                  후보로 쓰기 위한 선택 폼이다. 이 폼은 카드 그리드를 감싸지 않는다 — 각
+                  카드의 AddToItineraryDialog가 이미 자체 <form>(Dialog 트리거)을 갖고 있어
+                  중첩 폼이 되면 트리거 버튼이 이 폼의 제출 버튼으로 오동작할 수 있다.
+                  대신 HTML5 form 속성으로 체크박스/제출 버튼만 이 폼에 연결한다. */}
+              <form id="place-select-form" method="get" action="/places/plan">
+                <input type="hidden" name="region" value={regionCode} />
+              </form>
+              <p className="mb-3 text-xs text-muted-foreground">
+                마음에 드는 장소를 체크하면, 그 장소를 우선 반영해 AI 일정을 만들 수 있어요.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {recommendations.map(({ place, reason }) => {
+                  const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
+                  return (
+                    <Card key={place.id} hover>
+                      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+                        <label className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            name="selectedPlaceIds"
+                            value={place.id}
+                            form="place-select-form"
+                            className="mt-1 h-4 w-4 rounded border-input"
+                          />
+                          <div>
+                            <CardTitle>{place.name}</CardTitle>
+                            {place.address && <CardDescription className="mt-0.5">{place.address}</CardDescription>}
+                          </div>
+                        </label>
+                        {typeLabel && (
+                          <Badge variant="secondary" className="shrink-0">
+                            {typeLabel}
+                          </Badge>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-3">
+                        <p className="rounded-md border bg-muted/30 p-2.5 text-sm text-muted-foreground">
+                          <Sparkles className="mr-1 inline h-3.5 w-3.5 text-primary" />
+                          {reason}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <a href={`/places/${place.id}`} className="text-sm text-primary hover:underline">
+                            장소 상세 페이지 보기
+                          </a>
+                          {userId ? (
+                            <AddToItineraryDialog placeId={place.id} itineraries={userItineraries} />
+                          ) : (
+                            <SignInButton mode="redirect" forceRedirectUrl={currentPath}>
+                              <Button variant="outline" size="sm">
+                                로그인하고 일정에 추가
+                              </Button>
+                            </SignInButton>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+              <div className="sticky bottom-4 z-10 mt-6 flex justify-center">
+                {userId ? (
+                  <Button type="submit" form="place-select-form" size="lg" className="shadow-lg">
+                    <Sparkles className="h-4 w-4" />
+                    선택한 장소로 일정 만들기
+                  </Button>
+                ) : (
+                  <SignInButton mode="redirect" forceRedirectUrl={currentPath}>
+                    <Button size="lg" className="shadow-lg">
+                      로그인하고 선택한 장소로 일정 만들기
+                    </Button>
+                  </SignInButton>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

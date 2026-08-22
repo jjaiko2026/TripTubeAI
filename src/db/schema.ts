@@ -453,3 +453,29 @@ export const placeTourismDetails = pgTable(
     index("place_tourism_details_content_type_id_idx").on(table.contentTypeId),
   ]
 );
+
+// PHASE 13-2 — Pipeline B(TourAPI/Knowledge 기반 추천→일정 생성) 전용 실사용 이벤트 로그.
+// itineraries(Pipeline A/B 공용 결과 저장소)와 별개로, "그 결과가 어떤 사용자 행동을 거쳐
+// 나왔는지"만 기록한다. Pipeline A(YouTube/Naver 기존 파이프라인, src/lib/itinerary.ts)의
+// 어떤 코드 경로도 이 테이블에 쓰지 않으므로, 이 테이블에 쌓이는 데이터는 정의상 전부
+// Pipeline B 데이터다 — 별도 pipeline 구분 컬럼이나 기존 34건에 대한 소급 입력이 필요 없다.
+// FK를 걸지 않는다(분석 로그가 참조 무결성 실패로 사용자 흐름을 막으면 안 된다는 원칙,
+// video_knowledge/travel_courses 같은 핵심 데이터 테이블과는 성격이 다르다).
+export const pipelineBEvents = pgTable(
+  "pipeline_b_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // "recommend_executed" | "place_selected" | "plan_generate_requested" |
+    // "itinerary_completed" | "place_detail_viewed"
+    eventType: text("event_type").notNull(),
+    userId: text("user_id"), // 비로그인 상태에서도 볼 수 있는 단계(추천 조회, 장소 상세)가 있어 nullable
+    regionCode: text("region_code"),
+    placeId: uuid("place_id"),
+    itineraryId: uuid("itinerary_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pipeline_b_events_event_type_idx").on(table.eventType),
+    index("pipeline_b_events_created_at_idx").on(table.createdAt),
+  ]
+);
