@@ -931,6 +931,13 @@ async function attachSourcesAndLocations(
  * 나머지를 강제로 채운다. 각 날짜에 순환 배정해 한 날짜에 몰리지 않게 한다
  * (place-itinerary.ts의 동일한 보충 루프와 같은 방식). verifiedPlaces에 없는 id(다른 지역/
  * 존재하지 않는 장소 포함)는 조용히 무시한다 — candidates 밖 id를 새로 만들어내지 않는다.
+ *
+ * PHASE 9 — 이 함수가 추가하는 항목은 attachSourcesAndLocations()의 reorderDayItemsByGeography()
+ * 단계 이후에 끼워 넣어지는 것이라, 원래는 time:""인 채로 day.items 끝에 그냥 붙어 지리적
+ * 순서/시각 재계산을 전혀 받지 못했다(실제 DB에서 Pipeline B 일정 4/4건, 항목 전부가 이
+ * 상태로 확인됨). 항목이 실제로 추가된 날짜에만 한해 같은 reorderDayItemsByGeography()를
+ * 다시 적용해, 새 항목까지 포함한 동선으로 순서/시각을 재계산한다 — 항목이 추가되지 않은
+ * 날짜는 이 함수 진입 이전과 완전히 동일하게 그대로 둔다.
  */
 function ensureMustIncludePlaces(
   days: ItineraryDay[],
@@ -947,6 +954,7 @@ function ensureMustIncludePlaces(
   if (missingIds.length === 0) return days;
 
   const nextDays = days.map((d) => ({ ...d, items: [...d.items] }));
+  const changedDayIndices = new Set<number>();
   missingIds.forEach((id, i) => {
     const place = byId.get(id)!;
     const item: ItineraryItem = {
@@ -961,8 +969,18 @@ function ensureMustIncludePlaces(
           : null,
       placeId: place.id,
     };
-    nextDays[i % nextDays.length].items.push(item);
+    const dayIndex = i % nextDays.length;
+    nextDays[dayIndex].items.push(item);
+    changedDayIndices.add(dayIndex);
   });
+
+  for (const dayIndex of changedDayIndices) {
+    nextDays[dayIndex] = {
+      ...nextDays[dayIndex],
+      items: reorderDayItemsByGeography(nextDays[dayIndex].items),
+    };
+  }
+
   return nextDays;
 }
 
