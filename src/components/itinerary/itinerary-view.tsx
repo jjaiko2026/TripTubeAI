@@ -73,8 +73,15 @@ export async function ItineraryView({
             />
             <SummaryStat
               icon={<Wallet className="h-4 w-4" />}
-              label="예상 총 경비"
-              value={formatKRW(itinerary.estimatedTotalCost)}
+              label="참고용 평균 여행경비"
+              // PHASE 8 — estimatedTotalCost는 실제 일정 항목을 합산한 값이 아니라
+              // destination.avgCostPerPersonPerNight × nights × memberCount로 계산되는
+              // 목적지 평균치다(itinerary.ts, 이번 STEP에서 계산식 자체는 무수정). 라벨을
+              // "참고용"으로 바꿔 그 실체를 정직하게 알린다. 0원은 이 공식이 nights/memberCount를
+              // 항상 최소 1로 바닥 처리하므로 avgCostPerPersonPerNight===0일 때만, 즉 Pipeline B
+              // legacy(place-itinerary.ts가 하드코딩했던 빈 값)일 때만 나올 수 있는 값이라
+              // "비용 정보 없음"으로 안전하게 구분해 표시한다.
+              value={itinerary.estimatedTotalCost === 0 ? "비용 정보 없음" : formatKRW(itinerary.estimatedTotalCost)}
             />
           </CardContent>
           {request.purposes.length > 0 && (
