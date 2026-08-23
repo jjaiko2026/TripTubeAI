@@ -9,6 +9,7 @@ import {
   createReview,
   deleteItinerary,
   getPlaceById,
+  removeItineraryItemByIndex,
   removePlaceFromItinerary,
   saveItinerary,
 } from "@/db/queries";
@@ -168,6 +169,25 @@ export async function removePlaceFromItineraryAction(formData: FormData) {
   if (!itineraryId || !placeId || !Number.isFinite(day)) return;
 
   await removePlaceFromItinerary(itineraryId, userId, day, placeId);
+  revalidatePath(`/plan/result/${itineraryId}`);
+}
+
+/**
+ * PHASE 4 — placeId가 없는 일반 AI 생성 항목을 일정에서 제거한다(removePlaceFromItineraryAction과
+ * 동일한 소유권 검증 패턴, removeItineraryItemByIndex()는 무수정 재사용). 로그인하지 않았거나
+ * 본인 소유 일정이 아니면 조용히 아무 것도 하지 않는다 — removeItineraryItemByIndex()의
+ * (id, userId) 조건과 이중으로 보호된다.
+ */
+export async function removeItineraryItemAction(formData: FormData) {
+  const { userId } = await auth();
+  if (!userId) return;
+
+  const itineraryId = String(formData.get("itineraryId") ?? "");
+  const day = Number(formData.get("day") ?? NaN);
+  const itemIndex = Number(formData.get("itemIndex") ?? NaN);
+  if (!itineraryId || !Number.isFinite(day) || !Number.isFinite(itemIndex) || itemIndex < 0) return;
+
+  await removeItineraryItemByIndex(itineraryId, userId, day, itemIndex);
   revalidatePath(`/plan/result/${itineraryId}`);
 }
 

@@ -147,6 +147,7 @@ export async function ItineraryView({
                       place={item.placeId ? placesById.get(item.placeId) : undefined}
                       itineraryId={itineraryId}
                       dayNumber={day.day}
+                      itemIndex={idx}
                       canManage={canManage}
                     />
                   );

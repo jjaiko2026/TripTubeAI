@@ -409,3 +409,36 @@ export async function removePlaceFromItinerary(
   await db.update(itineraries).set({ days: nextDays }).where(eq(itineraries.id, itineraryId));
   return true;
 }
+
+/**
+ * PHASE 4 — placeId가 없는 일반 AI 생성 항목을 일정에서 제거한다. removePlaceFromItinerary()는
+ * placeId로 식별하는데, AI 생성 항목은 애초에 placeId가 없어 그 함수로는 지울 수 없다 —
+ * 그래서 별도 함수로 추가한다(removePlaceFromItinerary() 자체는 무수정).
+ *
+ * 식별자로 title/time 대신 그 날짜 안에서의 배열 인덱스(itemIndex)를 쓴다 — AI 생성 항목은
+ * title이 중복될 수 있고(예: 같은 지역명이 여러 날 반복) 고유 id 필드 자체가 없어, 인덱스가
+ * 유일하게 안정적인 식별자다. addPlaceToItinerary()/removePlaceFromItinerary()와 동일하게
+ * (id, userId) 소유자 확인을 거친다.
+ */
+export async function removeItineraryItemByIndex(
+  itineraryId: string,
+  userId: string,
+  day: number,
+  itemIndex: number
+): Promise<boolean> {
+  const db = getDb();
+  const [row] = await db
+    .select({ days: itineraries.days })
+    .from(itineraries)
+    .where(and(eq(itineraries.id, itineraryId), eq(itineraries.userId, userId)))
+    .limit(1);
+  if (!row) return false;
+
+  const days = (row.days as ItineraryDay[] | null) ?? [];
+  const nextDays = days.map((d) =>
+    d.day === day ? { ...d, items: d.items.filter((_, idx) => idx !== itemIndex) } : d
+  );
+
+  await db.update(itineraries).set({ days: nextDays }).where(eq(itineraries.id, itineraryId));
+  return true;
+}

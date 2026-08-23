@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import type { ItineraryItem } from "@/lib/types";
 import type { PlaceWithDetails } from "@/db/queries";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
-import { removePlaceFromItineraryAction } from "@/lib/actions";
+import { removeItineraryItemAction, removePlaceFromItineraryAction } from "@/lib/actions";
 import { purposeLabel } from "@/lib/purposes";
 
 /**
@@ -28,6 +28,7 @@ export function ItineraryItemCard({
   place,
   itineraryId,
   dayNumber,
+  itemIndex,
   canManage,
 }: {
   item: ItineraryItem;
@@ -37,6 +38,9 @@ export function ItineraryItemCard({
   place?: PlaceWithDetails;
   itineraryId: string;
   dayNumber: number;
+  /** PHASE 4 — 그 날짜 items 배열 안에서의 위치. placeId가 없는 일반 AI 항목은 고유 id가
+   *  없어(§removeItineraryItemByIndex) 삭제 시 이 인덱스로 식별한다. */
+  itemIndex: number;
   /** 삭제 폼을 보여줄지 여부(로그인한 뷰어에게만 — 실제 소유자 검증은 서버 액션에서 한 번 더 함). */
   canManage: boolean;
 }) {
@@ -118,6 +122,21 @@ export function ItineraryItemCard({
                   </form>
                 )}
               </div>
+            </div>
+          )}
+          {/* PHASE 4 — placeId가 없는 일반 AI 생성 항목도 소유자면 삭제할 수 있게 한다.
+              장소 정보 박스(위 {place && ...})가 없으므로 삭제 버튼만 독립적으로 둔다. */}
+          {!place && canManage && (
+            <div className="flex flex-wrap items-center gap-2">
+              <form action={removeItineraryItemAction}>
+                <input type="hidden" name="itineraryId" value={itineraryId} />
+                <input type="hidden" name="day" value={dayNumber} />
+                <input type="hidden" name="itemIndex" value={itemIndex} />
+                <Button type="submit" variant="ghost" size="xs" className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-3 w-3" />
+                  일정에서 삭제
+                </Button>
+              </form>
             </div>
           )}
           <div className="flex flex-wrap gap-1.5">
