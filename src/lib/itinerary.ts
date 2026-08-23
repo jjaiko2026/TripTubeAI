@@ -991,6 +991,9 @@ export async function generateItinerary(
   // 뒤죽박죽인 동선이 방문자에게 그대로 노출되므로, 일시적 오류(네트워크/쿼터 스파이크)에
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
   let plan: PlanDay[];
+  // PHASE 3 — 2회 재시도 다 실패해 결정론적 fallback으로 넘어간 경우에만 true. 정상 경로는
+  // 절대 건드리지 않는다(선언만 하고 fallback 분기 안에서만 대입).
+  let usedFallback = false;
   try {
     plan = await generateItineraryWithAI(
       request,
@@ -1016,6 +1019,7 @@ export async function generateItinerary(
     } catch (secondError) {
       console.error("AI itinerary generation failed again, using fallback plan:", secondError);
       plan = generateItineraryFallback(request, destination, days);
+      usedFallback = true;
     }
   }
 
@@ -1042,5 +1046,8 @@ export async function generateItinerary(
     currency: "KRW",
     generatedAt: new Date().toISOString(),
     tripTips,
+    // PHASE 3 — 정상 경로는 false를 굳이 명시하지 않아도 되지만(옵셔널), 이 반환 지점이
+    // usedFallback의 유일한 출처임을 명확히 하기 위해 항상 실제 값을 싣는다.
+    usedFallback,
   };
 }

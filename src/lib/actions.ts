@@ -44,7 +44,9 @@ export async function createItineraryAction(formData: FormData) {
   const request: TripRequest = { destination, region, memberType, memberCount, nights, month, purposes, notes };
   const itinerary = await generateItinerary(request);
   const id = await saveItinerary(itinerary, userId ?? null);
-  redirect(`/plan/result/${id}`);
+  // PHASE 3 — usedFallback은 saveItinerary()에 저장되지 않는 휘발성 신호라, 이 리다이렉트
+  // 안에서만 전달한다(§lib/types.ts Itinerary.usedFallback).
+  redirect(itinerary.usedFallback ? `/plan/result/${id}?fallback=1` : `/plan/result/${id}`);
 }
 
 /**
@@ -107,7 +109,8 @@ export async function generateItineraryFromPlacesAction(formData: FormData) {
 
   await logPipelineBEvent({ eventType: "itinerary_completed", userId, regionCode, itineraryId });
 
-  redirect(`/plan/result/${itineraryId}`);
+  // PHASE 3 — createItineraryAction과 동일한 방식(§usedFallback 휘발성 신호).
+  redirect(itinerary.usedFallback ? `/plan/result/${itineraryId}?fallback=1` : `/plan/result/${itineraryId}`);
 }
 
 export async function deleteItineraryAction(formData: FormData) {

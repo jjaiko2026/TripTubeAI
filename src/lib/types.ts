@@ -93,6 +93,10 @@ export interface Itinerary {
   currency: "KRW";
   generatedAt: string;
   tripTips: TripTips;
+  /** PHASE 3 — AI 생성이 두 번 다 실패해 결정론적 fallback plan을 썼을 때만 true. 이 요청/
+   *  리다이렉트 안에서만 쓰는 휘발성 신호로, saveItinerary()가 읽지 않아 DB에는 저장되지
+   *  않는다(스키마 변경 없음). 정상 AI 생성 경로는 이 필드를 아예 설정하지 않는다. */
+  usedFallback?: boolean;
 }
 
 export interface Review {
