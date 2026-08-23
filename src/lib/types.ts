@@ -82,6 +82,12 @@ export interface TripTips {
   packingList: string[];
   /** 해외 여행지의 최근 주요 이슈/유의사항. 국내 여행지면 빈 배열. */
   recentIssues: string[];
+  /** PHASE 7 — AI 호출이 실패해 월/지역 기반 결정론적 안내로 대체됐을 때만 true.
+   *  generateTripTips()가 EMPTY_TIPS 대신 이 값을 채운 fallback을 반환할 때 설정한다.
+   *  Itinerary.usedFallback(PHASE 3)과 달리 tripTips는 itineraries.tripTips jsonb에 그대로
+   *  실려 저장된다 — generateItinerary()를 수정하지 않고는 이 필드만 쏙 빼서 휘발성으로
+   *  만들 방법이 없고, 저장돼도 스키마 변경이나 부작용이 없어 그대로 둔다. */
+  usedFallback?: boolean;
 }
 
 export interface Itinerary {

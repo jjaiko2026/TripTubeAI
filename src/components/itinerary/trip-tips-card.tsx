@@ -20,6 +20,14 @@ export function TripTipsCard({ tripTips }: { tripTips: TripTips }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* PHASE 7 — AI 실패 시 완전히 빈 카드가 되지 않도록 결정론적 안내로 채워지는데
+            (§lib/trip-tips.ts generateTripTipsFallback), 그게 실제 AI가 생성한 맞춤 정보인 것처럼
+            보이면 안 되므로 명확히 구분해 알린다. */}
+        {tripTips.usedFallback && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            일부 여행 정보는 일시적으로 제공이 어려워 일반 안내로 표시됩니다.
+          </p>
+        )}
         {hasClimate && (
           <div className="flex gap-2.5">
             <CloudSun className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
