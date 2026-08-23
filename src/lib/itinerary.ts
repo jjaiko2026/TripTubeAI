@@ -423,9 +423,26 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
     for (let offset = 1; picked.length < slotsForDay.length && offset < areaGroups.length; offset++) {
       picked = [...picked, ...takeFromArea(areaIndex + offset, slotsForDay.length - picked.length)];
     }
-    // 그래도 부족하면(활동 카탈로그 자체가 여행 일수보다 작은 극단적인 경우) 이미 쓴 활동을 재사용합니다.
-    for (let i = 0; picked.length < slotsForDay.length; i++) {
-      picked.push(pool[i % pool.length]);
+    // 그래도 부족하면(활동 카탈로그 자체가 여행 일수보다 작은 극단적인 경우) 이미 쓴 활동을
+    // 재사용합니다. PHASE 5 — 예전엔 이 재사용이 항상 pool[0]부터 시작해, 카탈로그가 소진된
+    // 이후의 모든 날짜가 시간·순서까지 완전히 똑같아지는 문제가 실제 데이터에서 확인됐다
+    // (예: genericDestination()은 활동이 정확히 5개뿐이라 2일차부터 매일 동일했음). day를
+    // 시드로 회전 시작점을 옮겨 매 실행이 아니라 날짜별로 결정론적으로 다른 지점부터
+    // 순환하게 하고, 이 날짜에서 이미 고른 활동과는 먼저 안 겹치게 채운다. 그래도 슬롯이
+    // 남으면(활동 수 자체가 하루 슬롯 수보다 적은 극단적인 경우) 그때만 중복을 허용해
+    // 일정이 비지 않도록 보장한다.
+    if (picked.length < slotsForDay.length) {
+      const pickedTitles = new Set(picked.map((a) => a.title));
+      const rotationStart = (day - 1) % pool.length;
+      for (let step = 0; picked.length < slotsForDay.length && step < pool.length; step++) {
+        const candidate = pool[(rotationStart + step) % pool.length];
+        if (pickedTitles.has(candidate.title)) continue;
+        picked.push(candidate);
+        pickedTitles.add(candidate.title);
+      }
+      for (let i = 0; picked.length < slotsForDay.length; i++) {
+        picked.push(pool[(rotationStart + i) % pool.length]);
+      }
     }
 
     const items: PlanItem[] = slotsForDay.map((time, i) => {
