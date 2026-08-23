@@ -211,6 +211,11 @@ export interface PlaceWithDetails {
   tel: string | null;
   overview: string | null;
   externalContentTypeId: string | null;
+  /** TourAPI 대/중분류(cat1/cat2 원본, 예: "A02"/"A0206"). PHASE A-BRIDGE STEP 1에서 실측
+   *  확인한 실제 코드 체계 — src/lib/itinerary.ts의 TOUR_API_CATEGORY_LABELS가 사람이 읽는
+   *  라벨로 변환한다. 소분류(cat3)는 표본에서 의미 있는 활용처를 못 찾아 가져오지 않는다. */
+  categoryCode1: string | null;
+  categoryCode2: string | null;
   /** place_tourism_details.detail_data 원본(유형별 필드가 달라 공통 스키마로 만들지 않음,
    *  PHASE3H §11.1). 해당 place의 상세정보가 없으면 null. */
   detailData: unknown | null;
@@ -237,6 +242,8 @@ export async function getPlacesByRegion(regionCode: string): Promise<PlaceWithDe
       tel: places.tel,
       overview: places.overview,
       externalContentTypeId: places.externalContentTypeId,
+      categoryCode1: places.categoryCode1,
+      categoryCode2: places.categoryCode2,
       detailData: placeTourismDetails.detailData,
     })
     .from(places)
@@ -259,6 +266,8 @@ export async function getPlacesByRegion(regionCode: string): Promise<PlaceWithDe
     tel: row.tel,
     overview: row.overview,
     externalContentTypeId: row.externalContentTypeId,
+    categoryCode1: row.categoryCode1,
+    categoryCode2: row.categoryCode2,
     detailData: row.detailData ?? null,
   }));
 }
@@ -288,6 +297,8 @@ export async function getPlaceById(id: string): Promise<PlaceWithDetails | null>
       tel: places.tel,
       overview: places.overview,
       externalContentTypeId: places.externalContentTypeId,
+      categoryCode1: places.categoryCode1,
+      categoryCode2: places.categoryCode2,
       detailData: placeTourismDetails.detailData,
     })
     .from(places)
@@ -313,6 +324,8 @@ export async function getPlaceById(id: string): Promise<PlaceWithDetails | null>
     tel: row.tel,
     overview: row.overview,
     externalContentTypeId: row.externalContentTypeId,
+    categoryCode1: row.categoryCode1,
+    categoryCode2: row.categoryCode2,
     detailData: row.detailData ?? null,
   };
 }

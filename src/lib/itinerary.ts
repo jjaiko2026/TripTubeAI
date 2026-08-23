@@ -22,6 +22,7 @@ import { generateTripTips } from "@/lib/trip-tips";
 import { buildSearchPlan, type SearchPlan } from "@/lib/search-plan";
 import { getPlacesByRegion, type PlaceWithDetails } from "@/db/queries";
 import { getConfirmedRegionalKnowledge, type RegionalKnowledgeItem } from "@/db/knowledge-queries";
+import { getDetailFields } from "@/components/places/detail-field-labels";
 
 const AI_MODEL = "anthropic/claude-sonnet-5";
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
@@ -54,6 +55,23 @@ const DESTINATION_TO_TOUR_API_REGIONS: Record<string, { code: string; label: str
 function resolveTourApiRegions(destinationName: string): { code: string; label: string }[] {
   return DESTINATION_TO_TOUR_API_REGIONS[destinationName] ?? [];
 }
+
+/**
+ * PHASE A-BRIDGE STEP 1/2 — places.categoryCode2(TourAPI 중분류) → 사람이 읽는 라벨.
+ * 현재 places 120건 전수 조사(추측 아님)로 실제 등장한 코드만 매핑했다 — 조사에서 못 본
+ * 코드(A03 레포츠/A04 쇼핑/B02 숙박 등)는 지금 표본에 없어 일부러 비워둔다. 여기 없는
+ * 코드를 만나면 아래 categoryLabel 계산에서 조용히 생략된다(추측 라벨을 지어내지 않음).
+ */
+const TOUR_API_CATEGORY_LABELS: Record<string, string> = {
+  A0101: "자연관광지",
+  A0201: "역사관광지",
+  A0202: "휴양관광지",
+  A0203: "체험관광지",
+  A0204: "산업관광지",
+  A0205: "건축/조형물",
+  A0206: "문화시설",
+  A0502: "음식점",
+};
 
 type PlanItem = { time: string; title: string; description: string; tags: PurposeId[]; geocodeQuery: string };
 type PlanDay = { day: number; label: string; shortLabel: string; items: PlanItem[] };
@@ -162,9 +180,8 @@ async function generateItineraryWithAI(
       "있다면 그 어떤 조건보다도 최우선으로 반영하고, 나머지 빈 자리만 대표 활동 목록으로 채우세요. " +
       "verifiedPlaces/regionalKnowledge가 있다면 그 지역에 대해 검증된 참고 자료입니다 — 있으면 " +
       "activityCatalog보다 우선 활용해 항목의 title을 그 장소명 그대로 쓰되, 목적지 자체의 창작 판단이나 " +
-      "request.notes를 대체하지는 않습니다. verifiedPlaces/regionalKnowledge 각 항목의 region 필드는 " +
-      "destination(예: '제주도')보다 더 세부적인 실제 행정구역(예: '제주시', '서귀포시')입니다 — " +
-      "dayRegions를 정할 때 이 region 값을 참고해 같은 region끼리 가까운 날짜에 묶으세요.",
+      "request.notes를 대체하지는 않습니다. 구체적인 활용 방법과 주의사항은 아래 instructions를 " +
+      "따르세요.",
     prompt: JSON.stringify({
       destination: destination.name,
       region: request.region,
@@ -186,6 +203,17 @@ async function generateItineraryWithAI(
               address: p.address ?? undefined,
               overview: p.overview ? p.overview.slice(0, 150) : undefined,
               region: placeRegionLabelById.get(p.id),
+              // PHASE A-BRIDGE STEP 2 — TOUR_API_CATEGORY_LABELS에 없는 코드(현재 표본에 없던
+              // A03/A04/B02 등)를 만나면 조용히 undefined로 생략한다 — 추측 라벨을 지어내지 않는다.
+              categoryLabel: p.categoryCode2 ? TOUR_API_CATEGORY_LABELS[p.categoryCode2] : undefined,
+              // getDetailFields()는 /places/[id] 상세 페이지가 쓰는 것과 동일한 함수 재사용 —
+              // 유형별로 의미 있다고 이미 검증된 필드만 나온다(PHASE3H §11.1). 프롬프트 길이
+              // 상 장소당 최대 4개로 제한한다.
+              detailFields:
+                getDetailFields(p.externalContentTypeId, p.detailData)
+                  .slice(0, 4)
+                  .map((f) => `${f.label}: ${f.value}`)
+                  .join(", ") || undefined,
             }))
           : undefined,
       regionalKnowledge: regionalKnowledge.length > 0 ? regionalKnowledge : undefined,
@@ -196,6 +224,11 @@ async function generateItineraryWithAI(
             "특정 날짜에 대한 지역 지정이 있으면 그 날짜의 dayRegions를 그 지역으로 고정하고, 특정 장소나 " +
             "맛집을 꼭 넣어달라는 요청은 해당 날짜(지정이 없으면 동선상 자연스러운 날짜)의 items에 반드시 " +
             "포함시키세요. 빼달라는 요청이 있으면 그 장소/활동은 어떤 날짜에도 넣지 마세요."
+          : null,
+        verifiedPlaces.length > 0
+          ? "verifiedPlaces/regionalKnowledge 각 항목의 region 필드는 destination보다 더 세부적인 실제 " +
+            "행정구역입니다 — dayRegions를 정할 때 이 region 값을 참고해 같은 region끼리 가까운 날짜에 " +
+            "묶으세요."
           : null,
         days > 1
           ? `먼저 dayRegions에 1일차부터 ${days}일차까지 각 날짜가 담당할 소지역을 정하세요. ` +
@@ -230,6 +263,29 @@ async function generateItineraryWithAI(
         "단, 위 도착/출발 지점 판단보다 request.notes에 실제로 언급된 교통수단(배, 기차, 자차 등)이 있다면 " +
           "그쪽을 항상 우선하세요 — 위 규칙은 notes에 명시가 없을 때의 기본값일 뿐입니다.",
         "가능하면 activityCatalog의 활동을 활용하되, purposes와 memberType에 맞게 재구성/각색해도 됩니다.",
+        verifiedPlaces.length > 0
+          ? "verifiedPlaces의 categoryLabel(자연관광지/역사관광지/체험관광지 등)은 request.purposes와 맞는 " +
+            "장소를 고를 때 참고하고, detailFields(주차/반려동물 동반/이용시간 등)는 request.notes의 세부 " +
+            "제약조건(예: '주차 편한 곳', '아이와 가기 좋은 곳')을 만족하는 장소를 고를 때 참고하세요. " +
+            "둘 다 없는 장소라고 배제하지는 마세요 — 참고 정보가 없을 뿐입니다."
+          : null,
+        verifiedPlaces.length > 0 || regionalKnowledge.length > 0
+          ? "장소를 고를 때 detailFields나 regionalKnowledge의 구체적인 내용(수치, 이용시간, 요약 등)을 " +
+            "실제로 근거로 삼았다면, 그 항목의 description에 그 구체적인 내용을 실제로 언급하세요 — " +
+            "막연히 '편리하다', '좋다'라고만 쓰지 말고 근거가 된 정보를 구체적으로 드러내세요."
+          : null,
+        verifiedPlaces.length > 0
+          ? "verifiedPlaces에 특정 목적(request.purposes)에 맞는 categoryLabel의 장소가 없다면(예: 카페· " +
+            "쇼핑·나이트라이프 등 지금 verifiedPlaces에 해당 유형이 아예 없을 수 있습니다), 그 목적은 " +
+            "activityCatalog나 당신의 일반적인 여행 지식으로 자연스럽게 채우세요. 이때 그 장소가 " +
+            "verifiedPlaces에서 검증됐다거나 TourAPI·공식 자료로 확인된 것처럼 표현하지 마세요 — 그런 " +
+            "표현은 실제로 verifiedPlaces에 존재하는 장소에만 쓸 수 있습니다."
+          : null,
+        regionalKnowledge.length > 0
+          ? "regionalKnowledge는 목적지에 대한 추가 참고 정보일 뿐, 일정에 반드시 반영해야 하는 필수 " +
+            "조건이 아닙니다. 관련 있는 내용이 있으면 설명을 보강하는 데 활용하고, 없거나 부족해도 나머지 " +
+            "정보(verifiedPlaces, activityCatalog, 일반 지식)만으로 정상적으로 일정을 구성하세요."
+          : null,
         "각 항목의 tags는 request.purposes의 id 중에서 선택하세요. priority가 core인 목적은 일정 전체에서 " +
           "여러 항목에 걸쳐 확실히 드러나도록 최우선으로 반영하고, important는 가능하면, normal은 여유가 " +
           "있을 때만 반영하세요.",
