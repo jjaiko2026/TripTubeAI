@@ -31,6 +31,12 @@ export default async function PlanResultPage({
   const pdfTitle =
     `TripTubeAI와 함께하는 ${itinerary.destinationName} ${monthLabel(request.month)} ` +
     `${request.nights}박 ${request.nights + 1}일 여행 일정표`;
+  // PHASE 1 — Pipeline B legacy 경로(장소 후보만으로 만든 일정)에는 실제로 분석하지 않은
+  // YouTube/블로그 출처를 분석한 것처럼 표시하면 안 된다. 별도 컬럼 없이, 이미 저장된
+  // item.sources(§lib/types.ts ItineraryItem)만으로 판단한다.
+  const hasAnySourcedItem = itinerary.days.some((day) =>
+    day.items.some((item) => item.sources && item.sources.length > 0)
+  );
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -56,7 +62,9 @@ export default async function PlanResultPage({
           {itinerary.destinationName} 여행 일정이 완성됐어요
         </h1>
         <p className="mt-1 text-muted-foreground">
-          유튜브 영상과 블로그 글을 분석해 추천 코스를 구성했어요. 항목마다 참고한 출처도 함께 확인하세요.
+          {hasAnySourcedItem
+            ? "유튜브 영상과 블로그 글을 분석해 추천 코스를 구성했어요. 항목마다 참고한 출처도 함께 확인하세요."
+            : "AI가 선택한 장소 정보를 바탕으로 구성한 일정입니다."}
         </p>
       </div>
 

@@ -46,6 +46,11 @@ export async function ItineraryView({
 }) {
   const { request } = itinerary;
   const placesById = await resolvePlacesById(itinerary);
+  // PHASE 1 — plan/result/[id]/page.tsx와 동일한 판단 기준(별도 컬럼 없이 item.sources로
+  // 판단). 이 컴포넌트는 /plan/example에서도 쓰이므로 여기서도 독립적으로 계산한다.
+  const hasAnySourcedItem = itinerary.days.some((day) =>
+    day.items.some((item) => item.sources && item.sources.length > 0)
+  );
 
   return (
     <div id="itinerary-printable" className="space-y-8">
@@ -153,8 +158,9 @@ export async function ItineraryView({
       </div>
 
       <p data-pdf-section className="text-center text-xs text-muted-foreground">
-        * 본 일정은 AI가 최근 1년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를
-        다시 확인해 주세요.
+        {hasAnySourcedItem
+          ? "* 본 일정은 AI가 최근 1년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."
+          : "* 본 일정은 AI가 선택한 장소 정보를 바탕으로 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."}
       </p>
     </div>
   );
