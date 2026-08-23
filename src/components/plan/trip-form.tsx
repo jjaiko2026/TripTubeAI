@@ -1,7 +1,7 @@
 "use client";
 
-import type { TransitionStartFunction } from "react";
-import { Sparkles } from "lucide-react";
+import { useState, type TransitionStartFunction } from "react";
+import { Sparkles, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,12 +34,20 @@ export function TripForm({
   onChange,
   isPending,
   startTransition,
+  editFromId,
 }: {
   value: TripRequest;
   onChange: (next: TripRequest) => void;
   isPending: boolean;
   startTransition: TransitionStartFunction;
+  /** PHASE 6 — 있을 때만(=본인 소유 일정에서 "조건 다시 입력"으로 온 경우) "기존 일정 교체"
+   *  선택지를 보여준다. 일반 /plan/new(직접 진입, editFrom 없음)에서는 이 prop 자체가 없어
+   *  아래 저장 방식 UI가 렌더링되지 않고 기존과 완전히 동일하게 동작한다. */
+  editFromId?: string;
 }) {
+  // 기본값은 반드시 "new"(새 일정으로 저장) — 아무것도 안 건드리면 기존 동작과 100% 동일하다.
+  const [saveMode, setSaveMode] = useState<"new" | "replace">("new");
+
   if (isPending) {
     return (
       <Card>
@@ -242,6 +250,44 @@ export function TripForm({
               특정 날짜의 지역, 꼭 가고 싶은 장소나 맛집이 있으면 적어주세요. 챗봇과 대화하면 자동으로 채워져요.
             </p>
           </div>
+
+          {/* PHASE 6 — editFromId가 있을 때만(본인 소유 일정에서 "조건 다시 입력") 저장 방식을
+              고르게 한다. 기본값은 항상 "new" — 아무것도 안 눌러도 기존과 동일하게 새 일정이
+              만들어진다. */}
+          {editFromId && (
+            <div className="space-y-2 rounded-md border p-3">
+              <Label>저장 방식</Label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="saveModeRadio"
+                    checked={saveMode === "new"}
+                    onChange={() => setSaveMode("new")}
+                  />
+                  새 일정으로 저장 (기존 일정은 그대로 남아요)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="saveModeRadio"
+                    checked={saveMode === "replace"}
+                    onChange={() => setSaveMode("replace")}
+                  />
+                  기존 일정 교체 (같은 링크에 새 내용을 덮어써요)
+                </label>
+              </div>
+              {saveMode === "replace" && (
+                <p className="flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  기존 일정에서 직접 추가하거나 삭제한 장소는 모두 사라지고, 이 일정을 이미
+                  공유했다면 그 링크에서 보이는 내용도 함께 바뀌어요.
+                </p>
+              )}
+              <input type="hidden" name="editFrom" value={editFromId} />
+              <input type="hidden" name="saveMode" value={saveMode} />
+            </div>
+          )}
 
           <Button type="submit" className="w-full" size="lg" disabled={isAmbiguousUnresolved}>
             <Sparkles className="h-4 w-4" /> AI 여행 일정 만들기

@@ -12,6 +12,7 @@ import {
   removeItineraryItemByIndex,
   removePlaceFromItinerary,
   saveItinerary,
+  updateItinerary,
 } from "@/db/queries";
 import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import type { MemberType, Region, TripPurpose, TripRequest } from "@/lib/types";
@@ -44,6 +45,22 @@ export async function createItineraryAction(formData: FormData) {
 
   const request: TripRequest = { destination, region, memberType, memberCount, nights, month, purposes, notes };
   const itinerary = await generateItinerary(request);
+
+  // PHASE 6 — "조건 다시 입력"(§/plan/new?editFrom=)에서 사용자가 "기존 일정 교체"를 명시적으로
+  // 고르고, editFrom이 실제로 있을 때만 UPDATE를 시도한다. 그 외(기본값 "새 일정으로 저장",
+  // editFrom 없음, 비로그인)는 전부 기존과 100% 동일하게 아래 INSERT 경로로 떨어진다.
+  // updateItinerary()가 false를 반환하면(다른 사용자의 id를 조작해 넣은 경우 등, 소유권 불일치)
+  // 아무것도 훼손하지 않고 그대로 새 일정으로 저장하는 기존 동작으로 안전하게 폴백한다.
+  const editFrom = String(formData.get("editFrom") ?? "").trim();
+  const saveMode = String(formData.get("saveMode") ?? "new");
+
+  if (editFrom && saveMode === "replace" && userId) {
+    const replaced = await updateItinerary(editFrom, userId, itinerary);
+    if (replaced) {
+      redirect(itinerary.usedFallback ? `/plan/result/${editFrom}?fallback=1` : `/plan/result/${editFrom}`);
+    }
+  }
+
   const id = await saveItinerary(itinerary, userId ?? null);
   // PHASE 3 — usedFallback은 saveItinerary()에 저장되지 않는 휘발성 신호라, 이 리다이렉트
   // 안에서만 전달한다(§lib/types.ts Itinerary.usedFallback).

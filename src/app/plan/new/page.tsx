@@ -34,7 +34,10 @@ export default async function PlanNewPage({
           </p>
         </div>
       </div>
-      <TripPlanner initialValue={editItinerary?.request} />
+      {/* PHASE 6 — editItinerary가 null이면(id 없음/존재하지 않음/본인 소유 아님, getItinerary()가
+          이미 (id, userId)로 확인함) editFromId도 undefined로 넘겨 "기존 일정 교체" 선택지 자체가
+          아예 뜨지 않게 한다 — 소유권 확인을 페이지 레벨에서 한 번 더 보장. */}
+      <TripPlanner initialValue={editItinerary?.request} editFromId={editItinerary ? editFrom : undefined} />
     </div>
   );
 }

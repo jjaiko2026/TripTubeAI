@@ -31,6 +31,39 @@ export async function saveItinerary(itinerary: Itinerary, userId: string | null)
   return row.id;
 }
 
+/**
+ * PHASE 6 — "조건 다시 입력"에서 사용자가 "기존 일정 교체"를 선택했을 때만 쓴다. 새 행을
+ * INSERT하는 saveItinerary()는 그대로 두고(무수정), 이 함수는 기존 행의 request/days/
+ * estimatedTotalCost/tripTips를 saveItinerary()가 INSERT에 쓰는 것과 정확히 같은 값으로
+ * SET한다(userId는 소유자 불변 필드라 SET하지 않음). addPlaceToItinerary()/
+ * removePlaceFromItinerary()와 동일하게 (id, userId) 둘 다 일치해야만 실제로 바뀐다 — 다른
+ * 사용자의 itineraryId가 들어와도 WHERE 조건에 안 걸려 영향받은 행이 0개가 되고, 이 함수는
+ * false를 반환한다(호출부가 그 경우 새로 저장하는 등 안전하게 대응할 수 있게).
+ */
+export async function updateItinerary(id: string, userId: string, itinerary: Itinerary): Promise<boolean> {
+  const db = getDb();
+  const result = await db
+    .update(itineraries)
+    .set({
+      destination: itinerary.request.destination,
+      destinationName: itinerary.destinationName,
+      region: itinerary.region,
+      memberType: itinerary.request.memberType,
+      memberCount: itinerary.request.memberCount,
+      nights: itinerary.request.nights,
+      month: itinerary.request.month,
+      purposes: itinerary.request.purposes,
+      notes: itinerary.request.notes || null,
+      days: itinerary.days,
+      estimatedTotalCost: itinerary.estimatedTotalCost,
+      currency: itinerary.currency,
+      tripTips: itinerary.tripTips,
+    })
+    .where(and(eq(itineraries.id, id), eq(itineraries.userId, userId)))
+    .returning({ id: itineraries.id });
+  return result.length > 0;
+}
+
 export interface ItinerarySummary {
   id: string;
   destinationName: string;
