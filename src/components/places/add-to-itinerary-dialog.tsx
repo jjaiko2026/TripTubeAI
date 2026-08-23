@@ -39,13 +39,24 @@ import type { ItinerarySummary } from "@/db/queries";
 export function AddToItineraryDialog({
   placeId,
   itineraries,
+  defaultItineraryId,
+  defaultDay,
 }: {
   placeId: string;
   itineraries: ItinerarySummary[];
+  /** PHASE 2 STEP 4 — 현재 여행 context(§getPlacesTripContext)의 itinerary가 이 목록에
+   *  있으면(=현재 사용자 소유, canManage) 그 일정을 기본 선택값으로 쓴다. 생략하거나 목록에
+   *  없으면(다른 사용자 소유 등) 기존처럼 itineraries[0]으로 조용히 대체된다 — 하위 호환. */
+  defaultItineraryId?: string;
+  defaultDay?: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [itineraryId, setItineraryId] = useState(itineraries[0]?.id ?? "");
+  const initialItineraryId =
+    (defaultItineraryId && itineraries.some((it) => it.id === defaultItineraryId)
+      ? defaultItineraryId
+      : itineraries[0]?.id) ?? "";
+  const [itineraryId, setItineraryId] = useState(initialItineraryId);
   const [submitting, setSubmitting] = useState(false);
 
   if (itineraries.length === 0) {
@@ -65,6 +76,13 @@ export function AddToItineraryDialog({
   const selectedItinerary = itineraries.find((it) => it.id === itineraryId) ?? itineraries[0];
   const dayCount = Math.max(1, selectedItinerary.nights + 1);
   const dayOptions = Array.from({ length: dayCount }, (_, i) => i + 1);
+  // itineraryId가 defaultItineraryId 그대로일 때만(=사용자가 아직 직접 바꾸지 않았을 때만)
+  // defaultDay를 적용한다. dayCount 범위를 벗어나면(다른 날짜 수의 일정으로 바뀐 경우 등)
+  // 목록에 없는 값이 선택되지 않도록 안전하게 자른다.
+  const initialDay =
+    itineraryId === defaultItineraryId && defaultDay
+      ? String(Math.min(Math.max(1, defaultDay), dayCount))
+      : "1";
 
   // 이전엔 void addPlaceToItineraryAction(formData)로 fire-and-forget 후 다이얼로그만
   // 닫아, 추가가 실제로 성공했는지 아무 피드백도 없이 /places/[id]에 그대로 남아있었다
@@ -120,7 +138,7 @@ export function AddToItineraryDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="day">날짜</Label>
-              <Select key={itineraryId} name="day" defaultValue="1">
+              <Select key={itineraryId} name="day" defaultValue={initialDay}>
                 <SelectTrigger id="day" className="w-full">
                   <SelectValue />
                 </SelectTrigger>

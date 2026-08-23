@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Globe, TriangleAlert } from "lucide-react";
+import { CalendarCheck, Globe, TriangleAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { PlaceWithDetails } from "@/db/queries";
@@ -14,14 +14,26 @@ export const CONTENT_TYPE_LABEL: Record<string, string> = {
   "32": "숙박",
 };
 
-export function PlaceCard({ place }: { place: PlaceWithDetails }) {
+export function PlaceCard({
+  place,
+  alreadyInItinerary,
+  linkQuery,
+}: {
+  place: PlaceWithDetails;
+  /** PHASE 2 STEP 4 — 현재 여행 context(§getPlacesTripContext)의 itinerary에 이미 들어있는
+   *  장소면 표시. 생략하면(기존 모든 호출부) 배지가 안 뜰 뿐 기존과 동일하다. */
+  alreadyInItinerary?: boolean;
+  /** /places/[id]로 이동할 때 현재 region/itineraryId/day 등 context를 그대로 유지하기 위한
+   *  쿼리스트링(§buildPlaceDetailQuery). 생략하면 기존처럼 쿼리 없이 이동한다. */
+  linkQuery?: string;
+}) {
   const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
 
   return (
     <Card hover>
       {/* 카드 헤더(이름/주소/카테고리)만 상세 페이지로 연결한다 — CardContent의 홈페이지
           외부 링크(<a>)와 중첩되면 안 되므로 헤더만 따로 감싼다. */}
-      <Link href={`/places/${place.id}`} className="block">
+      <Link href={`/places/${place.id}${linkQuery ?? ""}`} className="block">
         <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
           <div>
             <CardTitle>{place.name}</CardTitle>
@@ -35,6 +47,12 @@ export function PlaceCard({ place }: { place: PlaceWithDetails }) {
         </CardHeader>
       </Link>
       <CardContent className="flex flex-col gap-2">
+        {alreadyInItinerary && (
+          <p className="flex items-center gap-1 text-xs text-primary">
+            <CalendarCheck className="h-3 w-3" />
+            이미 일정에 있음
+          </p>
+        )}
         {!place.coordinateReliable && (
           <p className="flex items-center gap-1 text-xs text-muted-foreground">
             <TriangleAlert className="h-3 w-3" />

@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { generateItineraryFromPlacesAction } from "@/lib/actions";
 import { ALL_PURPOSE_IDS, PURPOSE_LABELS } from "@/lib/purposes";
+import { ALL_MEMBER_TYPES } from "@/lib/types";
+import { buildPlacesQuery } from "@/lib/places-trip-context";
 
 // /places, /places/recommend와 동일한 3개 값(getPlacesByRegion()이 기대하는 regions.code).
 // 3줄뿐이라 완성된 다른 페이지들을 건드리지 않기 위해 여기서도 그대로 재정의한다.
@@ -18,14 +20,25 @@ const REGIONS = [
 export default async function PlacesPlanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ region?: string; error?: string; selectedPlaceIds?: string | string[] }>;
+  searchParams: Promise<{
+    region?: string;
+    error?: string;
+    selectedPlaceIds?: string | string[];
+    itineraryId?: string;
+    day?: string;
+  }>;
 }) {
   const params = await searchParams;
   const { userId } = await auth();
   const defaultRegion = REGIONS.find((r) => r.code === params.region)?.code ?? REGIONS[0].code;
-  // PHASE 13-2 — /places/recommend의 선택 폼(place-select-form)이 GET으로 넘겨주는 값.
-  // 여기서는 그대로 hidden input으로 다시 실어 generateItineraryFromPlacesAction까지
-  // 전달만 한다 — 실제 검증(후보 목록에 있는 id인지)은 generateItineraryFromPlaces()가 한다.
+  // PHASE 2 STEP 4 — 이 페이지는 항상 새 별도 일정을 만드는 화면이라(§generateItineraryFromPlacesAction)
+  // itineraryId로 온 "현재 여행"의 조건(인원/기간 등)을 폼 기본값으로 끌어오지 않는다 — 서로
+  // 무관한 일정의 값을 섞으면 오히려 혼란스럽다. 여기서는 오직 "장소 목록으로" 뒤로가기가
+  // 원래 보던 여행 context를 잃지 않도록 이어주는 용도로만 쓴다.
+  const backQuery = buildPlacesQuery({ region: params.region, itineraryId: params.itineraryId, day: params.day });
+  // PHASE 13-2/PHASE 2 STEP 2 — /places/recommend의 선택 폼(place-select-form)이 GET으로
+  // 넘겨주는 값. 여기서는 그대로 hidden input으로 다시 실어 generateItineraryFromPlacesAction까지
+  // 전달만 한다 — 실제 검증(후보 목록에 있는 id인지)은 generateItinerary()의 verifiedPlaces가 한다.
   const selectedPlaceIds = Array.isArray(params.selectedPlaceIds)
     ? params.selectedPlaceIds
     : params.selectedPlaceIds
@@ -35,7 +48,7 @@ export default async function PlacesPlanPage({
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
       <Link
-        href="/places"
+        href={`/places${backQuery}`}
         className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
@@ -94,19 +107,71 @@ export default async function PlacesPlanPage({
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <label htmlFor="nights" className="text-sm font-medium">
-                  숙박(박)
-                </label>
-                <input
-                  id="nights"
-                  name="nights"
-                  type="number"
-                  min={0}
-                  max={6}
-                  defaultValue={2}
-                  className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
-                />
+              {/* PHASE 2 STEP 2 — Pipeline A(generateItinerary())의 TripRequest가 요구하는
+                  memberType/memberCount/month를 이전엔 "혼자"/1명/이번 달로 하드코딩했다.
+                  이제 실제로 A를 호출하므로 다른 필드처럼 입력받는다. */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="memberType" className="text-sm font-medium">
+                    구성원
+                  </label>
+                  <select
+                    id="memberType"
+                    name="memberType"
+                    defaultValue="혼자"
+                    className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                  >
+                    {ALL_MEMBER_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="memberCount" className="text-sm font-medium">
+                    인원
+                  </label>
+                  <input
+                    id="memberCount"
+                    name="memberCount"
+                    type="number"
+                    min={1}
+                    defaultValue={1}
+                    className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="nights" className="text-sm font-medium">
+                    숙박(박)
+                  </label>
+                  <input
+                    id="nights"
+                    name="nights"
+                    type="number"
+                    min={0}
+                    max={6}
+                    defaultValue={2}
+                    className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="month" className="text-sm font-medium">
+                    여행 시기(월)
+                  </label>
+                  <input
+                    id="month"
+                    name="month"
+                    type="number"
+                    min={1}
+                    max={12}
+                    defaultValue={new Date().getMonth() + 1}
+                    className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">

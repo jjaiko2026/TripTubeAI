@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { generateItinerary } from "@/lib/itinerary";
-import { generateItineraryFromPlaces } from "@/lib/place-itinerary";
 import {
   addPlaceToItinerary,
   createReview,
@@ -14,7 +13,7 @@ import {
   saveItinerary,
 } from "@/db/queries";
 import { logPipelineBEvent } from "@/db/pipeline-b-events";
-import type { MemberType, Region, TripRequest } from "@/lib/types";
+import type { MemberType, Region, TripPurpose, TripRequest } from "@/lib/types";
 import { normalizeTripPurposes, isPurposeId } from "@/lib/purposes";
 
 /** 폼의 숨은 input(purposesJson)에 담긴 값을 파싱합니다. 조작되거나 비어 있어도 조용히 빈 배열로 대체합니다. */
@@ -49,18 +48,23 @@ export async function createItineraryAction(formData: FormData) {
 }
 
 /**
- * AI ITINERARY GENERATION v1 — TourAPI 장소(getPlacesByRegion())만으로 AI가 날짜별
- * 일정을 구성한다. createItineraryAction()과 형태는 비슷하지만(auth → 폼 파싱 → 생성 →
- * redirect) generateItinerary()(YouTube/Naver 기반 기존 파이프라인)는 호출하지 않는다 —
- * 완전히 다른 데이터 출처라 섞지 않는다. 실제 생성/검증은 place-itinerary.ts가 전담한다.
- * 로그인이 필요하다 — addPlaceToItinerary()가 소유자(userId)를 요구하기 때문.
+ * AI ITINERARY GENERATION v2 (PHASE 2 STEP 2) — /places/plan에서 선택한 TourAPI 장소를
+ * Pipeline A(generateItinerary(), YouTube/Naver 기존 파이프라인)의 mustInclude 신호로 넘긴다.
+ * 이전엔 place-itinerary.ts(TourAPI 후보만으로 독립적으로 날짜를 배치하던 별도 생성기)를
+ * 호출했지만, 이제 최종 날짜/순서/동선 판단은 전부 Pipeline A가 한다 — place-itinerary.ts
+ * 자체는 삭제하지 않는다(재검토 대상으로 보류). 로그인이 필요하다 — saveItinerary()가
+ * 소유자(userId)를 요구하기 때문(하위 호환: userId ?? null을 받는 createItineraryAction과
+ * 달리 이 경로는 원래도 로그인 필수였다 — 그 동작을 그대로 유지).
  */
-// regionCode → 사람이 읽는 지역명. 클라이언트가 보낸 값을 신뢰하지 않고 서버에서 직접
-// 매핑한다(select와 별도 hidden input을 동기화하려다 생기는 값 불일치를 원천 차단).
-const REGION_LABELS: Record<string, string> = {
+// regionCode → generateItinerary()가 인식하는 destination 텍스트. itinerary.ts의
+// resolveTourApiRegions()는 정확히 "서울"/"제주도"/"서귀포" 3개 문자열만 키로 인식하므로
+// (PHASE 2 STEP 1 조사), 화면 표시용 라벨("제주시"/"서귀포시", 예: dashboard/page.tsx의
+// 별도 REGION_LABELS)을 그대로 destination에 넣으면 verifiedPlaces가 조용히 빈 배열이 된다.
+// 이 상수는 오직 그 매칭을 통과시키기 위한 것으로, 화면에는 노출되지 않는다.
+const REGION_DESTINATION_NAMES: Record<string, string> = {
   "KR-SEOUL-CITY": "서울",
-  "KR-JEJU-JEJUSI": "제주시",
-  "KR-JEJU-SEOGWIPO": "서귀포시",
+  "KR-JEJU-JEJUSI": "제주도",
+  "KR-JEJU-SEOGWIPO": "서귀포",
 };
 
 export async function generateItineraryFromPlacesAction(formData: FormData) {
@@ -68,32 +72,41 @@ export async function generateItineraryFromPlacesAction(formData: FormData) {
   if (!userId) return;
 
   const regionCode = String(formData.get("regionCode") ?? "");
-  const regionLabel = REGION_LABELS[regionCode];
+  const destinationName = REGION_DESTINATION_NAMES[regionCode];
+  if (!destinationName) return;
+
   const nights = Math.min(6, Math.max(0, Number(formData.get("nights") ?? 2)));
   const notes = String(formData.get("notes") ?? "").trim();
-  const purposes = formData.getAll("purposes").map(String).filter(isPurposeId);
-  // PHASE 13-2 — /places/recommend에서 사용자가 체크한 장소 id들. 아직 후보 목록(이 지역의
-  // TourAPI candidates) 대조 전이라 여기서는 문자열 그대로만 모은다 — 검증은
-  // generateItineraryFromPlaces()가 담당한다.
+  const purposes: TripPurpose[] = formData
+    .getAll("purposes")
+    .map(String)
+    .filter(isPurposeId)
+    .map((id) => ({ id, priority: "normal" }));
+  const memberType = String(formData.get("memberType") ?? "혼자") as MemberType;
+  const memberCount = Math.max(1, Number(formData.get("memberCount") ?? 1));
+  const month = Math.min(12, Math.max(1, Number(formData.get("month") ?? new Date().getMonth() + 1)));
+  // PHASE 13-2부터 이어진 값 — /places/recommend에서 사용자가 체크한 장소 id들. candidates
+  // 대조(존재 검증)는 generateItinerary() 내부(verifiedPlaces)에서 이뤄진다 — 여기서는
+  // 문자열 그대로만 모은다.
   const selectedPlaceIds = formData.getAll("selectedPlaceIds").map(String).filter(Boolean);
-  if (!regionLabel) return;
 
-  const itineraryId = await generateItineraryFromPlaces({
-    regionCode,
-    regionLabel,
-    days: nights + 1,
+  await logPipelineBEvent({ eventType: "plan_generate_requested", userId, regionCode });
+
+  const request: TripRequest = {
+    destination: destinationName,
+    region: "국내",
+    memberType,
+    memberCount,
+    nights,
+    month,
     purposes,
     notes,
-    memberType: "혼자",
-    memberCount: 1,
-    month: new Date().getMonth() + 1,
-    userId,
-    selectedPlaceIds,
-  });
+  };
+  const itinerary = await generateItinerary(request, { mustIncludePlaceIds: selectedPlaceIds });
+  const itineraryId = await saveItinerary(itinerary, userId);
 
-  if (!itineraryId) {
-    redirect(`/places/plan?region=${regionCode}&error=1`);
-  }
+  await logPipelineBEvent({ eventType: "itinerary_completed", userId, regionCode, itineraryId });
+
   redirect(`/plan/result/${itineraryId}`);
 }
 

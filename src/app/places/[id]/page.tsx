@@ -11,16 +11,18 @@ import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
 import { getDetailFields } from "@/components/places/detail-field-labels";
 import { AddToItineraryDialog } from "@/components/places/add-to-itinerary-dialog";
+import { getPlacesTripContext } from "@/lib/places-trip-context";
+import { CalendarCheck } from "lucide-react";
 
 export default async function PlaceDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ fromItinerary?: string }>;
+  searchParams: Promise<{ fromItinerary?: string; day?: string }>;
 }) {
   const { id } = await params;
-  const { fromItinerary } = await searchParams;
+  const { fromItinerary, day } = await searchParams;
   const place = await getPlaceById(id);
   if (!place) notFound();
 
@@ -32,7 +34,10 @@ export default async function PlaceDetailPage({
   // 로그인 유도 버튼이 로그인 후 이 장소로 되돌아오게 한다(쿼리까지 보존) — 예전엔
   // /plan/new(전혀 무관한 기존 일정 생성 폼)로 고정돼 있어, 로그인하고 나면 방금 보던
   // 장소가 무엇이었는지 완전히 잃어버렸다.
-  const currentPath = `/places/${id}${fromItinerary ? `?fromItinerary=${fromItinerary}` : ""}`;
+  const currentSearch = new URLSearchParams();
+  if (fromItinerary) currentSearch.set("fromItinerary", fromItinerary);
+  if (day) currentSearch.set("day", day);
+  const currentPath = `/places/${id}${currentSearch.toString() ? `?${currentSearch.toString()}` : ""}`;
 
   const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
   const detailFields = getDetailFields(place.externalContentTypeId, place.detailData);
@@ -43,6 +48,12 @@ export default async function PlaceDetailPage({
   // 최근 3건만 보여주는 /plan/new의 기본값(getRecentItinerariesForUser 자체는 무수정)과
   // 달리, 일정 선택 목록에서는 더 많이 보여주려고 limit만 늘려서 그대로 재사용한다.
   const userItineraries = userId ? await getRecentItinerariesForUser(userId, 20) : [];
+  // PHASE 2 STEP 4 — fromItinerary가 있으면 그 일정을 "현재 여행"으로 취급한다. 공개 조회
+  // (이미 포함된 장소인지 표시)는 소유자가 아니어도 되지만, AddToItineraryDialog의 기본
+  // 선택값으로 얹는 건 소유자(canManage)일 때만 한다 — 남의 일정 id를 URL에 넣어도 그
+  // 일정은 애초에 userItineraries(본인 소유 목록)에 없으므로 자연히 무시된다.
+  const tripContext = fromItinerary ? await getPlacesTripContext(fromItinerary, userId ?? null) : null;
+  const alreadyInItinerary = tripContext?.existingPlaceIds.has(place.id) ?? false;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
@@ -63,15 +74,26 @@ export default async function PlaceDetailPage({
         )}
       </div>
 
-      <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         {userId ? (
-          <AddToItineraryDialog placeId={place.id} itineraries={userItineraries} />
+          <AddToItineraryDialog
+            placeId={place.id}
+            itineraries={userItineraries}
+            defaultItineraryId={tripContext?.canManage ? tripContext.itineraryId : undefined}
+            defaultDay={day ? Number(day) : undefined}
+          />
         ) : (
           <SignInButton mode="redirect" forceRedirectUrl={currentPath}>
             <Button variant="outline" size="sm">
               로그인하고 일정에 추가
             </Button>
           </SignInButton>
+        )}
+        {alreadyInItinerary && (
+          <span className="flex items-center gap-1 text-xs text-primary">
+            <CalendarCheck className="h-3.5 w-3.5" />
+            이미 이 일정에 있어요
+          </span>
         )}
       </div>
 

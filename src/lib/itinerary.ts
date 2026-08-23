@@ -161,8 +161,14 @@ async function generateItineraryWithAI(
   days: number,
   verifiedPlaces: PlaceWithDetails[],
   placeRegionLabelById: Map<string, string>,
-  regionalKnowledge: (RegionalKnowledgeItem & { region: string })[]
+  regionalKnowledge: (RegionalKnowledgeItem & { region: string })[],
+  // PHASE 2 STEP 2 — /places/recommend에서 사용자가 직접 체크한 TourAPI 장소 id(§verifiedPlaces
+  // 중 일부). 최종 일정 구성(날짜/순서/동선)은 여전히 AI가 결정하되, 이 id들은 "사용자가 직접
+  // 고른 곳이니 반드시 포함하라"는 강한 신호로만 verifiedPlaces 프롬프트에 얹는다. 비어 있으면
+  // (기본값) 기존 동작과 100% 동일 — place-itinerary.ts의 isUserSelected와 같은 취지.
+  mustIncludePlaceIds: string[] = []
 ): Promise<PlanDay[]> {
+  const mustIncludeSet = new Set(mustIncludePlaceIds);
   const activityCatalog = destination.activities.slice(0, 6).map((a) => ({
     title: a.title,
     tags: a.tags,
@@ -214,6 +220,9 @@ async function generateItineraryWithAI(
                   .slice(0, 4)
                   .map((f) => `${f.label}: ${f.value}`)
                   .join(", ") || undefined,
+              // PHASE 2 STEP 2 — mustIncludeSet에 없는 절대다수는 undefined로 생략해 기존
+              // verifiedPlaces payload 모양을 그대로 유지한다(회귀 없음).
+              mustInclude: mustIncludeSet.has(p.id) ? true : undefined,
             }))
           : undefined,
       regionalKnowledge: regionalKnowledge.length > 0 ? regionalKnowledge : undefined,
@@ -263,6 +272,12 @@ async function generateItineraryWithAI(
         "단, 위 도착/출발 지점 판단보다 request.notes에 실제로 언급된 교통수단(배, 기차, 자차 등)이 있다면 " +
           "그쪽을 항상 우선하세요 — 위 규칙은 notes에 명시가 없을 때의 기본값일 뿐입니다.",
         "가능하면 activityCatalog의 활동을 활용하되, purposes와 memberType에 맞게 재구성/각색해도 됩니다.",
+        mustIncludeSet.size > 0
+          ? "verifiedPlaces 중 mustInclude가 true인 장소는 사용자가 /places에서 직접 골라 반드시 " +
+            "포함해야 하는 곳입니다 — 빠짐없이 지리적으로 자연스러운 날짜의 items에 title을 그 장소명 " +
+            "그대로 포함시키세요. 다만 그 장소를 몇 일차 몇 번째 순서에 넣을지, 나머지 항목을 무엇으로 " +
+            "채울지는 당신이 동선/목적/notes를 종합해 판단하세요."
+          : null,
         verifiedPlaces.length > 0
           ? "verifiedPlaces의 categoryLabel(자연관광지/역사관광지/체험관광지 등)은 request.purposes와 맞는 " +
             "장소를 고를 때 참고하고, detailFields(주차/반려동물 동반/이용시간 등)는 request.notes의 세부 " +
@@ -894,7 +909,53 @@ async function attachSourcesAndLocations(
   }));
 }
 
-export async function generateItinerary(request: TripRequest): Promise<Itinerary> {
+/**
+ * PHASE 2 STEP 2 — mustIncludePlaceIds 중 최종 itineraryDays에 placeId로 이미 들어간 것을 뺀
+ * 나머지를 강제로 채운다. 각 날짜에 순환 배정해 한 날짜에 몰리지 않게 한다
+ * (place-itinerary.ts의 동일한 보충 루프와 같은 방식). verifiedPlaces에 없는 id(다른 지역/
+ * 존재하지 않는 장소 포함)는 조용히 무시한다 — candidates 밖 id를 새로 만들어내지 않는다.
+ */
+function ensureMustIncludePlaces(
+  days: ItineraryDay[],
+  verifiedPlaces: PlaceWithDetails[],
+  mustIncludePlaceIds: string[]
+): ItineraryDay[] {
+  if (mustIncludePlaceIds.length === 0 || days.length === 0) return days;
+
+  const alreadyIncluded = new Set(
+    days.flatMap((d) => d.items.map((item) => item.placeId).filter((id): id is string => Boolean(id)))
+  );
+  const byId = new Map(verifiedPlaces.map((p) => [p.id, p]));
+  const missingIds = mustIncludePlaceIds.filter((id) => !alreadyIncluded.has(id) && byId.has(id));
+  if (missingIds.length === 0) return days;
+
+  const nextDays = days.map((d) => ({ ...d, items: [...d.items] }));
+  missingIds.forEach((id, i) => {
+    const place = byId.get(id)!;
+    const item: ItineraryItem = {
+      time: "",
+      title: place.name,
+      description: place.overview ?? "사용자가 /places에서 직접 선택한 장소입니다.",
+      tags: [],
+      sources: [],
+      location:
+        place.coordinateReliable && place.lat !== null && place.lng !== null
+          ? { lat: Number(place.lat), lng: Number(place.lng) }
+          : null,
+      placeId: place.id,
+    };
+    nextDays[i % nextDays.length].items.push(item);
+  });
+  return nextDays;
+}
+
+export async function generateItinerary(
+  request: TripRequest,
+  // PHASE 2 STEP 2 — /places/plan(§generateItineraryFromPlacesAction)이 넘기는 mustInclude 신호.
+  // 생략하면(기존 /plan/new 경로 전부) 완전히 이전과 동일하게 동작한다.
+  options?: { mustIncludePlaceIds?: string[] }
+): Promise<Itinerary> {
+  const mustIncludePlaceIds = options?.mustIncludePlaceIds ?? [];
   const destination = resolveDestination(request.destination);
   const days = Math.max(1, request.nights + 1);
 
@@ -931,11 +992,27 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
   let plan: PlanDay[];
   try {
-    plan = await generateItineraryWithAI(request, destination, days, verifiedPlaces, placeRegionLabelById, regionalKnowledge);
+    plan = await generateItineraryWithAI(
+      request,
+      destination,
+      days,
+      verifiedPlaces,
+      placeRegionLabelById,
+      regionalKnowledge,
+      mustIncludePlaceIds
+    );
   } catch (firstError) {
     console.error("AI itinerary generation failed, retrying once:", firstError);
     try {
-      plan = await generateItineraryWithAI(request, destination, days, verifiedPlaces, placeRegionLabelById, regionalKnowledge);
+      plan = await generateItineraryWithAI(
+        request,
+        destination,
+        days,
+        verifiedPlaces,
+        placeRegionLabelById,
+        regionalKnowledge,
+        mustIncludePlaceIds
+      );
     } catch (secondError) {
       console.error("AI itinerary generation failed again, using fallback plan:", secondError);
       plan = generateItineraryFallback(request, destination, days);
@@ -946,7 +1023,11 @@ export async function generateItinerary(request: TripRequest): Promise<Itinerary
   // 폼/챗봇에서 직접 확정한 request.region을 그대로 따릅니다.
   const resolvedDestination: DestinationProfile = { ...destination, region: request.region };
 
-  const itineraryDays = await attachSourcesAndLocations(request, resolvedDestination, plan, verifiedPlaces);
+  const attachedDays = await attachSourcesAndLocations(request, resolvedDestination, plan, verifiedPlaces);
+  // PHASE 2 STEP 2 — AI가 mustInclude 지시를 어기고 그 장소를 title로 쓰지 않은 경우를 대비한
+  // 안전장치(place-itinerary.ts의 강제 보충 루프와 같은 취지 — 프롬프트만 믿지 않음). 프롬프트로
+  // 이미 다 반영됐다면(대부분) 아무것도 추가하지 않는다.
+  const itineraryDays = ensureMustIncludePlaces(attachedDays, verifiedPlaces, mustIncludePlaceIds);
   const tripTips = await tripTipsPromise;
 
   const estimatedTotalCost =
