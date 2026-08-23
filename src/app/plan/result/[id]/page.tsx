@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { ArrowLeft, RefreshCcw, Star } from "lucide-react";
+import { ArrowLeft, MapPin, RefreshCcw, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button";
@@ -50,6 +50,15 @@ export default async function PlanResultPage({
             fileName={`${itinerary.destinationName}_여행일정.pdf`}
             title={pdfTitle}
           />
+          {/* PHASE 2 최종 점검 — /places의 여행 Context 기능(§getPlacesTripContext)으로
+              들어가는 유일한 진입점. 본인 일정에 장소를 "추가"하는 목적이라 공유 링크로
+              들어온 비소유자에게는 보이지 않는다(DeleteItineraryButton과 동일하게 canManage로
+              가드) — /places 쪽 context 로직 자체는 무수정, 여기서 링크만 새로 잇는다. */}
+          {canManage && (
+            <Button render={<Link href={`/places?itineraryId=${id}`} />} variant="outline" size="sm">
+              <MapPin className="h-4 w-4" /> 장소 더 둘러보고 추가하기
+            </Button>
+          )}
           <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
             <RefreshCcw className="h-4 w-4" /> 새 일정 만들기
           </Button>

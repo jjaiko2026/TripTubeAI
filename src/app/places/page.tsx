@@ -111,7 +111,11 @@ export default async function PlacesPage({
             size="sm"
           >
             <Sparkles className="h-4 w-4" />
-            AI 일정 만들기
+            {/* PHASE 2 최종 점검 — 이 버튼은 항상 완전히 새로운 별도 일정을 만든다
+                (generateItineraryFromPlacesAction, 현재 여행에 장소를 얹지 않음). tripContext가
+                있을 때는 위 배너의 "OO 여행 기준으로 탐색 중"과 헷갈리지 않도록 문구로
+                구분한다 — 동작 자체는 무수정. */}
+            {tripContext ? "새 여행 일정 만들기" : "AI 일정 만들기"}
           </Button>
         </div>
       </div>
