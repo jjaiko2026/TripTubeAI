@@ -51,10 +51,10 @@ export function MobileNav({ links }: { links: { href: string; label: string }[] 
             </div>
           </Show>
           <Show when="signed-out">
-            <SignInButton mode="redirect" forceRedirectUrl="/places">
+            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
               <Button variant="outline">로그인</Button>
             </SignInButton>
-            <SignInButton mode="redirect" forceRedirectUrl="/places">
+            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
               <Button>
                 <Sparkles className="h-4 w-4" /> 일정 만들기
               </Button>

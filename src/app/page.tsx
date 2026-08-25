@@ -75,12 +75,12 @@ export default async function Home() {
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Show when="signed-in">
-              <Button render={<Link href="/places" />} size="lg">
+              <Button render={<Link href="/plan/new" />} size="lg">
                 <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
               </Button>
             </Show>
             <Show when="signed-out">
-              <SignInButton mode="redirect" forceRedirectUrl="/places">
+              <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
                 <Button size="lg">
                   <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
                 </Button>
@@ -289,12 +289,12 @@ export default async function Home() {
               로그인하고 여행지·인원·기간·목적만 입력하면 AI가 나머지를 정리해 드려요.
             </p>
             <Show when="signed-in">
-              <Button render={<Link href="/places" />} size="lg" variant="secondary">
+              <Button render={<Link href="/plan/new" />} size="lg" variant="secondary">
                 <Sparkles className="h-4 w-4" /> 지금 시작하기
               </Button>
             </Show>
             <Show when="signed-out">
-              <SignInButton mode="redirect" forceRedirectUrl="/places">
+              <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
                 <Button size="lg" variant="secondary">
                   <Sparkles className="h-4 w-4" /> 지금 시작하기
                 </Button>
