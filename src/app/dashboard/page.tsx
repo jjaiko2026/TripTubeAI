@@ -12,6 +12,7 @@ import { SheetsSyncPanel } from "@/components/dashboard/sheets-sync-panel";
 import { KnowledgeSheetsSyncPanel } from "@/components/dashboard/knowledge-sheets-sync-panel";
 import { DESTINATION_COSTS, generateUsageStats, totalUsage } from "@/lib/mock/stats";
 import { getDashboardData } from "@/db/queries";
+import { getKnowledgeReviewProgress } from "@/db/knowledge-queries";
 import { getPipelineBUsageStats, PIPELINE_B_TEST_USER_IDS } from "@/db/pipeline-b-events";
 import { formatNumber } from "@/lib/format";
 import { isAdminUser } from "@/lib/admin";
@@ -40,6 +41,7 @@ export default async function DashboardPage({
   const { userId } = await auth();
   const dashboard = await getDashboardData(30);
   const pipelineB = await getPipelineBUsageStats();
+  const knowledgeProgress = isAdminUser(userId) ? await getKnowledgeReviewProgress() : null;
   const params = await searchParams;
   const sheetsMessage =
     params.sheets === "exported"
@@ -167,6 +169,30 @@ export default async function DashboardPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {knowledgeProgress && knowledgeProgress.total > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">검수 진행률</span>
+                  <span className="font-medium">
+                    {formatNumber(knowledgeProgress.confirmed + knowledgeProgress.review)} / {formatNumber(knowledgeProgress.total)}
+                  </span>
+                </div>
+                <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="bg-primary"
+                    style={{ width: `${(knowledgeProgress.confirmed / knowledgeProgress.total) * 100}%` }}
+                  />
+                  <div
+                    className="bg-primary/40"
+                    style={{ width: `${(knowledgeProgress.review / knowledgeProgress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  confirmed {formatNumber(knowledgeProgress.confirmed)} · review {formatNumber(knowledgeProgress.review)} · 미검수{" "}
+                  {formatNumber(knowledgeProgress.unverified)}
+                </p>
+              </div>
+            )}
             <KnowledgeSheetsSyncPanel />
           </CardContent>
         </Card>

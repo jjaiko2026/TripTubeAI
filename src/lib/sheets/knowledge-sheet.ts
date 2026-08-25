@@ -22,7 +22,7 @@
  * reviewer/reviewed_at도 건드리지 않는다(unchanged로만 집계) — 재실행할 때마다 이미 검수된
  * 행의 reviewed_at이 흔들리던 문제(PHASE 12-4에서 실제 관찰됨)를 근본적으로 막기 위함이다.
  */
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { videoKnowledge } from "@/db/schema";
 import type { KnowledgeContent } from "@/lib/knowledge/types";
@@ -111,7 +111,17 @@ const PLACE_REQUIRED_KNOWLEDGE_TYPES = new Set(["place", "food", "accommodation"
 /** video_knowledge 전체를 KNOWLEDGE_REVIEW 시트로 내보낸다(기존 시트 내용은 덮어씀). */
 export async function exportKnowledgeToSheet(): Promise<number> {
   const db = getDb();
-  const rows = await db.select().from(videoKnowledge).limit(MAX_EXPORT_ROWS);
+  // 미검수(unverified) 행을 맨 위로, 그 안에서는 confidence 높은 순으로 정렬한다 — 이미 검수를
+  // 마친 confirmed/review 행이 시트 위쪽을 채워 미검수 행을 찾기 어려워지는 걸 막기 위해서다
+  // (정렬 기준 자체는 기존에 저장된 값만 쓰고 새로운 판정을 추가하지 않는다).
+  const rows = await db
+    .select()
+    .from(videoKnowledge)
+    .orderBy(
+      sql`CASE ${videoKnowledge.status} WHEN 'unverified' THEN 0 WHEN 'review' THEN 1 ELSE 2 END`,
+      sql`CASE ${videoKnowledge.confidence} WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END`
+    )
+    .limit(MAX_EXPORT_ROWS);
 
   const dataRows = rows.map((row) => {
     const content = row.content as KnowledgeContent;

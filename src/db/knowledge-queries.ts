@@ -1,7 +1,32 @@
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { videoKnowledge, videos, regions } from "@/db/schema";
 import type { KnowledgeTypeId, Confidence, KnowledgeContent } from "@/lib/knowledge/types";
+
+export interface KnowledgeReviewProgress {
+  total: number;
+  confirmed: number;
+  review: number;
+  unverified: number;
+}
+
+/** video_knowledge.status 분포 — 대시보드에 검수 진행률을 보여주기 위한 집계다(PHASE 12 후속). */
+export async function getKnowledgeReviewProgress(): Promise<KnowledgeReviewProgress> {
+  const db = getDb();
+  const rows = await db
+    .select({ status: videoKnowledge.status, count: sql<number>`count(*)::int` })
+    .from(videoKnowledge)
+    .groupBy(videoKnowledge.status);
+
+  const progress: KnowledgeReviewProgress = { total: 0, confirmed: 0, review: 0, unverified: 0 };
+  for (const row of rows) {
+    progress.total += row.count;
+    if (row.status === "confirmed") progress.confirmed = row.count;
+    else if (row.status === "review") progress.review = row.count;
+    else if (row.status === "unverified") progress.unverified = row.count;
+  }
+  return progress;
+}
 
 // 프롬프트가 지나치게 커지지 않도록 하는 상한. content-sheet.ts의 MAX_EXPORT_QUERIES,
 // itinerary.ts의 MAX_PLACE_SEARCH_QUERIES와 같은 취지의 안전 상한이다.
