@@ -126,3 +126,33 @@ export async function setDropdownColumn(
     }),
   });
 }
+
+/**
+ * 헤더 행(0행) 특정 열들에 셀 메모(note)를 붙입니다. 헤더 텍스트 자체(=import가 컬럼을 찾는
+ * 매칭 키)는 건드리지 않고, 마우스를 올리면 보이는 보조 설명만 추가하는 용도입니다
+ * (KNOWLEDGE_REVIEW 시트의 review_note/admin_status 입력 혼동 방지 — PHASE 후속 UX 개선).
+ */
+export async function setHeaderNotes(sheetName: string, notesByColumnIndex: Record<number, string>): Promise<void> {
+  const entries = Object.entries(notesByColumnIndex);
+  if (entries.length === 0) return;
+  const sheetId = await ensureSheetExists(sheetName);
+
+  await sheetsApiFetch(":batchUpdate", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: entries.map(([columnIndex, note]) => ({
+        updateCells: {
+          range: {
+            sheetId,
+            startRowIndex: 0,
+            endRowIndex: 1,
+            startColumnIndex: Number(columnIndex),
+            endColumnIndex: Number(columnIndex) + 1,
+          },
+          rows: [{ values: [{ note }] }],
+          fields: "note",
+        },
+      })),
+    }),
+  });
+}

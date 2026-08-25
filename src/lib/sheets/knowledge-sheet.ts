@@ -26,7 +26,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { videoKnowledge } from "@/db/schema";
 import type { KnowledgeContent } from "@/lib/knowledge/types";
-import { overwriteSheet, readSheet, setDropdownColumn } from "@/lib/sheets/client";
+import { overwriteSheet, readSheet, setDropdownColumn, setHeaderNotes } from "@/lib/sheets/client";
 
 const KNOWLEDGE_SHEET_NAME = "KNOWLEDGE_REVIEW";
 const HEADER = [
@@ -102,6 +102,14 @@ const REVIEW_FIELDS: ReviewField[] = [
 const STATUS_OPTIONS = ["confirmed", "review", "rejected"] as const;
 const VALID_STATUS = new Set<string>(STATUS_OPTIONS);
 
+// PILOT 후속 — review_note(Q8)/admin_status(Q7) 두 열의 입력 혼동이 실제 검수에서 발견됐다(30건
+// 전원 스왑 입력). 헤더 텍스트 자체는 import의 열 매칭 키라 바꿀 수 없으므로, 셀 메모(hover 시
+// 보이는 설명)로만 안내한다 — import 로직/헤더 문자열은 전혀 건드리지 않는다.
+const HEADER_NOTES: Partial<Record<(typeof HEADER)[number], string>> = {
+  admin_status: "Q7 최종 판정 — 이 열에는 confirmed / review / rejected 중 하나만 입력하세요. 판단 근거나 메모는 이 열이 아니라 review_note(Q8) 열에 적어주세요.",
+  review_note: "Q8 판정 근거 / 검토 메모 — 자유 텍스트로 판단 근거를 적는 열입니다. confirmed / review / rejected 값은 이 열이 아니라 admin_status(Q7) 열에 입력하세요.",
+};
+
 // PHASE 11-2 — confirmed의 필수조건이 아니라, Place Resolution(place_id 매칭)이 아직 필요한
 // knowledge_type을 표시하는 통계용 집합이다. 단일 장소를 가리키지 않는 course/transport/info는
 // 제외한다. (과거 PHASE 10-0에서는 이 집합을 confirmed 차단 조건으로 썼으나, 콘텐츠 검수와
@@ -147,6 +155,12 @@ export async function exportKnowledgeToSheet(): Promise<number> {
     await setDropdownColumn(KNOWLEDGE_SHEET_NAME, COL[field.column], field.labels, dataRows.length);
   }
   await setDropdownColumn(KNOWLEDGE_SHEET_NAME, COL.admin_status, [...STATUS_OPTIONS], dataRows.length);
+  await setHeaderNotes(
+    KNOWLEDGE_SHEET_NAME,
+    Object.fromEntries(
+      Object.entries(HEADER_NOTES).map(([column, note]) => [COL[column as (typeof HEADER)[number]], note])
+    )
+  );
   return dataRows.length;
 }
 
