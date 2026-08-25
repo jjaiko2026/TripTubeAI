@@ -14,6 +14,7 @@ interface YoutubeSearchItem {
 
 interface YoutubeVideoDetailsItem {
   id: string;
+  snippet?: { description?: string };
   contentDetails?: { duration?: string };
 }
 
@@ -67,7 +68,7 @@ export async function fetchYoutubeVideos(query: string, maxResults = 8): Promise
     if (videoIds.length === 0) return [];
 
     const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-    detailsUrl.searchParams.set("part", "contentDetails");
+    detailsUrl.searchParams.set("part", "snippet,contentDetails");
     detailsUrl.searchParams.set("id", videoIds.join(","));
     detailsUrl.searchParams.set("key", YOUTUBE_API_KEY);
     const detailsRes = await fetch(detailsUrl, { signal: controller.signal });
@@ -77,6 +78,9 @@ export async function fetchYoutubeVideos(query: string, maxResults = 8): Promise
     const durationById = new Map(
       (detailsJson.items ?? []).map((it) => [it.id, it.contentDetails?.duration ?? "PT0S"])
     );
+    // videos.list(id 배치)가 이미 응답에 포함하는 전체 description을 그대로 활용한다 —
+    // search.list의 축약된 snippet.description과 달리 이쪽이 원문 전체다(Phase 9-2 조사).
+    const descriptionById = new Map((detailsJson.items ?? []).map((it) => [it.id, it.snippet?.description]));
 
     return items
       .filter((it): it is YoutubeSearchItem & { id: { videoId: string } } => Boolean(it.id?.videoId))
@@ -93,6 +97,7 @@ export async function fetchYoutubeVideos(query: string, maxResults = 8): Promise
           durationLabel: isoDurationToLabel(durationById.get(id) ?? "PT0S"),
           url: `https://www.youtube.com/watch?v=${id}`,
           thumbnailUrl: snippet.thumbnails?.medium?.url ?? snippet.thumbnails?.default?.url,
+          description: descriptionById.get(id) || undefined,
         };
       });
   } catch {
