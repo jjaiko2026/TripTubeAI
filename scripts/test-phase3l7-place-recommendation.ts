@@ -6,7 +6,7 @@
 export {};
 
 import { getPlacesByRegion } from "@/db/queries";
-import { recommendPlaces } from "@/lib/place-recommendation";
+import { recommendPlaces, type PlaceCandidate } from "@/lib/place-recommendation";
 
 let passed = 0;
 let failed = 0;
@@ -25,7 +25,8 @@ async function main() {
   check("후보(getPlacesByRegion) 40건 확보", candidates.length === 40, String(candidates.length));
 
   const candidateIds = new Set(candidates.map((c) => c.id));
-  const recommendations = await recommendPlaces(candidates, ["healing", "food"], "바다가 보이는 곳이면 좋겠어요");
+  const placeCandidates: PlaceCandidate[] = candidates.map((place) => ({ source: "TOUR_API" as const, place }));
+  const recommendations = await recommendPlaces(placeCandidates, ["healing", "food"], "바다가 보이는 곳이면 좋겠어요");
 
   check("추천 결과 1~5건", recommendations.length >= 1 && recommendations.length <= 5, String(recommendations.length));
 
