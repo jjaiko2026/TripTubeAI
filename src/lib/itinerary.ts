@@ -632,6 +632,33 @@ export async function fetchQueryCandidates(query: string): Promise<Source[]> {
 }
 
 /**
+ * PRD v3.0 §8/§16 — 검증 장소에 매칭된 항목용. YouTube 전용 검색은 여전히 건너뛰되(사다리),
+ * 그 장소 이름으로 네이버 블로그만 검색해 캐시한다("블로그 1개라도 붙인다"). combined 캐시와
+ * 겹치지 않게 키에 "blog::" 접두사를 쓴다. 블로그가 아예 없으면 빈 배열(항목은 장소 정보만).
+ */
+async function fetchQueryBlogs(query: string): Promise<Source[]> {
+  const cacheKey = `blog::${query}`;
+  const cached = await getCachedSources(cacheKey).catch(() => null);
+  if (cached && cached.length > 0) return cached;
+
+  const acquired = await tryAcquireSearchLock(cacheKey, SEARCH_LOCK_TTL_MS).catch(() => true);
+  if (!acquired) {
+    const waited = await waitForCachedSources(cacheKey, LOCK_WAIT_MAX_MS);
+    if (waited) return waited;
+  }
+
+  try {
+    const blogs = await fetchNaverBlogs(query, CANDIDATE_POOL_SIZE);
+    if (blogs.length > 0) {
+      await saveCachedSources(cacheKey, blogs).catch((error) => console.error("blog cache write failed:", error));
+    }
+    return blogs;
+  } finally {
+    if (acquired) await releaseSearchLock(cacheKey).catch((error) => console.error("blog lock release failed:", error));
+  }
+}
+
+/**
  * SearchPlan의 primaryQueries(기본 2~3개)로만 후보 풀을 모으고, 그마저도 너무 적을 때만
  * fallbackQueries를 보충으로 태웁니다 (PRD §9/§13 — 여행 하나당 실시간 검색 최대 4회 목표).
  */
@@ -832,9 +859,9 @@ function placeSearchQuery(destination: DestinationProfile, place: string): strin
 }
 
 /**
- * 검증된 장소(관광공사·검수된 Knowledge)와 매칭되지 않는 항목만, 그 장소 자체를 검색어로 쓴
- * 전용 풀에서 가장 잘 맞는 소스를 최대 SOURCES_PER_ITEM개 골라 붙입니다. 검증 장소가 매칭되는
- * 항목은 그 place가 1차 참고자료라 소스 검색을 건너뜁니다(§8/§10 검색 우선순위 사다리).
+ * 검증 장소와 매칭되지 않는 항목: 그 장소 자체를 검색어로 쓴 전용 풀(YouTube+블로그)에서
+ * 최대 SOURCES_PER_ITEM개를 고릅니다. 매칭되는 항목: YouTube 전용 검색은 건너뛰고(§8/§10
+ * 사다리) 그 장소 블로그만 검색해 1개를 붙입니다 — place 참고자료 + 블로그 1개.
  * 좌표는 좌표 신뢰도가 검증된 매칭이면 그 값을 쓰고, 그 외에는 항목마다 지오코딩합니다.
  */
 async function attachSourcesAndLocations(
@@ -871,14 +898,25 @@ async function attachSourcesAndLocations(
     new Set(uniqueTitles.filter((title) => !matchedPlaceByTitle.has(title)).map((title) => placeByTitle.get(title)!))
   ).slice(0, MAX_PLACE_SEARCH_QUERIES);
 
+  // 매칭된 항목은 YouTube 전용 검색은 건너뛰되(사다리), 그 장소 이름으로 네이버 블로그만
+  // 검색해 카드에 블로그 1개를 붙인다(사용자 요청 — 장소 정보만 덩그러니 놓이지 않게).
+  const matchedPlacesForBlog = Array.from(
+    new Set(uniqueTitles.filter((title) => matchedPlaceByTitle.has(title)).map((title) => placeByTitle.get(title)!))
+  ).slice(0, MAX_PLACE_SEARCH_QUERIES);
+
   // 넓은 목적지+목적 쿼리(searchPlan)는 장소 전용 검색이 아예 못 찾았을 때만 쓰는 최후
   // 보충용으로 남겨둡니다 — 이 풀만으로 항목을 채우면 "탕롱수상인형극장"처럼 구체적인 항목에
   // "직장인 해외여행 추천"류 무관한 콘텐츠가 붙는 문제가 생기기 때문입니다.
   const searchPlan = buildSearchPlan(request, destination.name);
-  const [placePoolEntries, fallbackPool, rejectedSourceIds, locationEntries] = await Promise.all([
+  const [placePoolEntries, matchedBlogEntries, fallbackPool, rejectedSourceIds, locationEntries] = await Promise.all([
     Promise.all(
       placesToSearch.map(
         async (place) => [place, await fetchQueryCandidates(placeSearchQuery(destination, place))] as const
+      )
+    ),
+    Promise.all(
+      matchedPlacesForBlog.map(
+        async (place) => [place, await fetchQueryBlogs(placeSearchQuery(destination, place))] as const
       )
     ),
     buildTripCandidatePool(searchPlan),
@@ -896,6 +934,7 @@ async function attachSourcesAndLocations(
   ]);
   const locationByTitle = new Map(locationEntries);
   const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
+  const blogPoolByPlace = new Map(matchedBlogEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
   const approvedFallbackPool = fallbackPool.filter((s) => !rejectedSourceIds.has(s.id));
 
   // 같은 소스가 여러 항목에 중복 노출되지 않도록, 이미 쓴 소스는 다음 항목에서 제외하고 고릅니다.
@@ -908,10 +947,22 @@ async function attachSourcesAndLocations(
   // 넓혀서 채우는 건 전체 항목의 장소 전용 배정이 끝난 뒤(2단계)로 미룹니다.
   const shortTitles: string[] = [];
   for (const title of uniqueTitles) {
-    // 검증된 장소가 붙는 항목은 그 place 참고자료(관광공사·Knowledge)가 1차 근거이므로,
-    // 장소 전용 검색도 목적지 단위 보충도 하지 않는다(§8/§10 사다리). sources는 빈 배열로 둔다.
+    // 검증된 장소가 붙는 항목: YouTube 전용 검색·목적지 단위 보충은 하지 않고(§8/§10 사다리),
+    // 그 장소 블로그 풀에서 가장 잘 맞는 1개만 붙인다. 블로그가 없으면 빈 배열(장소 정보만).
     if (matchedPlaceByTitle.has(title)) {
-      sourcesByTitle.set(title, []);
+      const matchedItem = itemByTitle.get(title)!;
+      const blogPool = blogPoolByPlace.get(placeByTitle.get(title)!) ?? [];
+      const pickedBlog = blogPool
+        .filter((s) => !usedSourceIds.has(s.id))
+        .map((source) => ({ source, score: scoreSourceForItem(matchedItem, source, request, usedChannels) }))
+        .sort((a, b) => b.score - a.score)
+        .map((r) => r.source)
+        .slice(0, 1);
+      for (const s of pickedBlog) {
+        usedSourceIds.add(s.id);
+        usedChannels.add(channelOrSite(s));
+      }
+      sourcesByTitle.set(title, pickedBlog);
       continue;
     }
     const item = itemByTitle.get(title)!;

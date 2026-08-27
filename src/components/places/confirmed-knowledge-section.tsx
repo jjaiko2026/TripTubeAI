@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { ShieldCheck, SquarePlay, Route } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { ConfirmedKnowledgeCardItem } from "@/db/knowledge-queries";
 
@@ -28,55 +28,42 @@ export function ConfirmedKnowledgeSection({
       <p className="mb-4 text-sm text-muted-foreground">
         관리자가 실제 영상 설명을 확인하고 검수를 마친 정보예요.
       </p>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {items.map((item) => (
-          <Card key={item.id} hover>
+          <Card key={item.id} hover className="flex-row gap-3 p-3">
             <a
               href={item.video.videoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="relative flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden bg-muted"
+              className="relative flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted"
             >
               {item.video.thumbnailUrl ? (
-                <Image
-                  src={item.video.thumbnailUrl}
-                  alt=""
-                  fill
-                  sizes="(max-width: 640px) 100vw, 50vw"
-                  className="object-cover"
-                />
+                <Image src={item.video.thumbnailUrl} alt="" fill sizes="96px" className="object-cover" />
               ) : (
-                <SquarePlay className="h-8 w-8 text-muted-foreground" />
+                <SquarePlay className="h-5 w-5 text-muted-foreground" />
               )}
             </a>
-            <CardHeader>
-              <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                {item.inCourse && (
-                  <Badge variant="secondary" className="gap-1">
-                    <Route className="h-3 w-3" />
-                    코스에 포함된 영상
-                  </Badge>
-                )}
-              </div>
-              <CardTitle>
-                <a
-                  href={item.video.videoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="line-clamp-2 hover:underline"
-                >
-                  {item.displayTitle}
-                </a>
-              </CardTitle>
-              <CardDescription className="flex items-center gap-1">
-                <SquarePlay className="h-3 w-3 shrink-0" />
-                원본 영상 보기
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="rounded-md border bg-muted/30 p-2.5 text-sm text-muted-foreground">{item.summary}</p>
-              <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">원본 영상: {item.video.title}</p>
-            </CardContent>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              {item.inCourse && (
+                <Badge variant="secondary" className="w-fit gap-1">
+                  <Route className="h-3 w-3" />
+                  코스 포함
+                </Badge>
+              )}
+              <a
+                href={item.video.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="line-clamp-1 text-sm font-medium hover:underline"
+              >
+                {item.displayTitle}
+              </a>
+              <p className="line-clamp-2 text-xs text-muted-foreground">{item.summary}</p>
+              <p className="mt-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+                <SquarePlay className="h-2.5 w-2.5 shrink-0" />
+                원본 영상
+              </p>
+            </div>
           </Card>
         ))}
       </div>
