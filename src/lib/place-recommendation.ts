@@ -4,6 +4,7 @@ import type { PlaceWithDetails } from "@/db/queries";
 import type { RegionalKnowledgeItem } from "@/db/knowledge-queries";
 import { PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
+import { fastModel } from "@/lib/ai/model";
 
 /**
  * PHASE 13-2 — TourAPI Place와 Knowledge-derived Place(§getKnowledgeDerivedPlacesByRegion,
@@ -35,7 +36,8 @@ export const GENERIC_CATEGORY_LABEL: Record<string, string> = {
  * 이 작업은 창작이 아니라 "주어진 목록 중에서 고르기"이므로, trip-tips.ts와 같은 이유로
  * 저렴한 모델을 쓴다("창작이 아니라 요약/선택이라 저렴한 모델로 충분", trip-tips.ts 주석 참고).
  */
-const RECOMMEND_MODEL = "google/gemini-3.6-flash";
+// PRD v3.0 §20 — provider 직결(§lib/ai/model.ts).
+const RECOMMEND_MODEL = fastModel;
 
 const recommendationSchema = z.object({
   recommendations: z

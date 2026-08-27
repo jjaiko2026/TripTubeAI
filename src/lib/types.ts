@@ -116,6 +116,8 @@ export interface Review {
   tripMonth: number;
   nights: number;
   createdAt: string;
+  /** 이 후기가 작성된 일정 결과의 id(있으면). 일정이 삭제/재생성돼도 후기는 유지되므로 FK는 걸지 않는다. */
+  itineraryId?: string | null;
 }
 
 export interface DestinationCost {

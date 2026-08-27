@@ -17,8 +17,10 @@ function gradientFor(id: string) {
   return THUMB_GRADIENTS[sum % THUMB_GRADIENTS.length];
 }
 
-/** 출처 하나를 썸네일(위)+정보(아래) 세로 카드로 보여줍니다. 3개까지 3열 그리드로 나란히 씁니다. */
-export function SourceCard({ source }: { source: Source }) {
+/** 출처 하나를 썸네일(위)+정보(아래) 세로 카드로 보여줍니다. 3개까지 3열 그리드로 나란히 씁니다.
+ *  typeLabel을 주면 썸네일 좌상단에 유형 배지(예: "영상"/"블로그")를 얹어, 관광공사/여행 지식
+ *  참고자료와 나란히 놓였을 때 유형이 한눈에 구분되게 합니다. */
+export function SourceCard({ source, typeLabel }: { source: Source; typeLabel?: string }) {
   const isVideo = source.kind === "youtube";
 
   return (
@@ -51,6 +53,11 @@ export function SourceCard({ source }: { source: Source }) {
               <Newspaper className="h-6 w-6 text-muted-foreground" />
             )}
           </div>
+        )}
+        {typeLabel && (
+          <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">
+            {typeLabel}
+          </span>
         )}
         {isVideo && (
           <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1 text-[10px] font-medium text-white">

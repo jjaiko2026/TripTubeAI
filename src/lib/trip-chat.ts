@@ -4,7 +4,8 @@ import { ALL_MEMBER_TYPES, type MemberType, type TripRequest } from "@/lib/types
 import { AMBIGUOUS_DESTINATIONS } from "@/lib/mock/destinations";
 import { ALL_PURPOSE_IDS, MAX_CORE_PURPOSES, PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
 
-export const TRIP_CHAT_MODEL = "google/gemini-3.6-flash";
+// 모델 선택은 서버 전용 라우트(src/app/api/trip-chat/route.ts)에서 한다 — 이 모듈은 클라이언트
+// 컴포넌트도 타입을 import하므로 provider SDK를 끌어들이지 않는다(PRD v3.0 §20).
 
 export const updateTripDraftTool = tool({
   description:

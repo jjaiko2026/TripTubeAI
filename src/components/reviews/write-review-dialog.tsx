@@ -23,12 +23,15 @@ export function WriteReviewDialog({
   children,
   defaultDestination,
   defaultNights,
+  itineraryId,
   onCreated,
 }: {
   renderAs?: ReactElement;
   children: ReactNode;
   defaultDestination?: string;
   defaultNights?: number;
+  /** 일정 결과 페이지에서 열렸으면 그 일정 id — 후기를 그 일정에 연결한다. */
+  itineraryId?: string;
   onCreated?: (review: Review) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -44,6 +47,7 @@ export function WriteReviewDialog({
       tripMonth: new Date().getMonth() + 1,
       nights: Number(formData.get("nights") || 1),
       createdAt: new Date().toISOString(),
+      itineraryId: itineraryId ?? null,
     });
     setOpen(false);
     void createReviewAction(formData);
@@ -54,6 +58,7 @@ export function WriteReviewDialog({
       <DialogTrigger render={renderAs}>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <form action={handleSubmit}>
+          {itineraryId && <input type="hidden" name="itineraryId" value={itineraryId} />}
           <DialogHeader>
             <DialogTitle>여행 후기 작성</DialogTitle>
             <DialogDescription>다른 여행자들에게 도움이 되는 후기를 남겨주세요.</DialogDescription>

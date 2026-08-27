@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DayFlowCard } from "@/components/itinerary/day-flow-card";
+import { ReviseDayForm } from "@/components/itinerary/revise-day-form";
 import { ItineraryItemCard } from "@/components/itinerary/itinerary-item-card";
 import { ItineraryMap } from "@/components/itinerary/itinerary-map";
 import { TripTipsCard } from "@/components/itinerary/trip-tips-card";
@@ -10,12 +11,14 @@ import { colorForDay } from "@/lib/day-colors";
 import type { Itinerary } from "@/lib/types";
 import { PURPOSE_LABELS } from "@/lib/purposes";
 import { MapPin, Users, CalendarDays, Wallet, Route } from "lucide-react";
-import { getPlaceById, type PlaceWithDetails } from "@/db/queries";
+import { getPlaceByIdIncludingKnowledgeDerived, type PlaceWithDetails } from "@/db/queries";
 
 /**
  * itinerary.days의 항목 중 placeId가 있는 것만(ITINERARY PLACE MANAGEMENT v1) 골라
- * getPlaceById()로 한 번씩만 조회한다(같은 place가 여러 항목에 있어도 중복 호출하지 않음).
- * getPlaceById() 자체는 무수정 재사용 — 여기서는 결과를 Map으로 모을 뿐이다.
+ * getPlaceByIdIncludingKnowledgeDerived()로 한 번씩만 조회한다(같은 place가 여러 항목에
+ * 있어도 중복 호출하지 않음). TourAPI 장소(externalSource='tour_api')와 Knowledge-derived
+ * 장소를 모두 해석해 두 provenance 모두 일정지 카드에 상세가 뜨게 한다 — 조회 함수 자체는
+ * 무수정 재사용이고, 여기서는 결과를 Map으로 모을 뿐이다.
  */
 async function resolvePlacesById(itinerary: Itinerary): Promise<Map<string, PlaceWithDetails>> {
   const uniqueIds = new Set<string>();
@@ -26,7 +29,7 @@ async function resolvePlacesById(itinerary: Itinerary): Promise<Map<string, Plac
   }
   if (uniqueIds.size === 0) return new Map();
 
-  const results = await Promise.all([...uniqueIds].map((id) => getPlaceById(id)));
+  const results = await Promise.all([...uniqueIds].map((id) => getPlaceByIdIncludingKnowledgeDerived(id)));
   const map = new Map<string, PlaceWithDetails>();
   results.forEach((place, i) => {
     if (place) map.set([...uniqueIds][i], place);
@@ -47,10 +50,13 @@ export async function ItineraryView({
   const { request } = itinerary;
   const placesById = await resolvePlacesById(itinerary);
   // PHASE 1 — plan/result/[id]/page.tsx와 동일한 판단 기준(별도 컬럼 없이 item.sources로
-  // 판단). 이 컴포넌트는 /plan/example에서도 쓰이므로 여기서도 독립적으로 계산한다.
+  // 판단). 이 컴포넌트는 /plan/example에서도 쓰이므로 여기서도 독립적으로 계산한다. PRD v3.0
+  // §13 — YouTube/블로그 출처가 없어도 관광공사·검수된 여행 지식이 근거로 붙는 경우는 따로
+  // 구분한다. placesById(실제로 조회에 성공해 카드에 참고자료로 렌더되는 것)를 기준으로 본다.
   const hasAnySourcedItem = itinerary.days.some((day) =>
     day.items.some((item) => item.sources && item.sources.length > 0)
   );
+  const hasReferencedPlace = placesById.size > 0;
 
   return (
     <div id="itinerary-printable" className="space-y-8">
@@ -115,6 +121,12 @@ export async function ItineraryView({
 
       <DayFlowCard days={itinerary.days} />
 
+      {/* PRD v3.0 §16 — 소유자만 자연어로 특정 날짜를 다시 짤 수 있다. /plan/example 등
+          비소유 뷰(canManage=false)에는 뜨지 않는다. */}
+      {canManage && (
+        <ReviseDayForm itineraryId={itineraryId} dayNumbers={itinerary.days.map((d) => d.day)} />
+      )}
+
       <div className="space-y-6">
         {itinerary.days.map((day) => {
           const dayColor = colorForDay(day.day);
@@ -168,7 +180,9 @@ export async function ItineraryView({
       <p data-pdf-section className="text-center text-xs text-muted-foreground">
         {hasAnySourcedItem
           ? "* 본 일정은 AI가 최근 1년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."
-          : "* 본 일정은 AI가 선택한 장소 정보를 바탕으로 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."}
+          : hasReferencedPlace
+            ? "* 본 일정은 AI가 한국관광공사·검수된 여행 지식을 참고해 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."
+            : "* 본 일정은 AI가 선택한 장소 정보를 바탕으로 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."}
       </p>
     </div>
   );

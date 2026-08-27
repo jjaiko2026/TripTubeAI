@@ -27,8 +27,10 @@ import {
   type RegionalKnowledgeItem,
 } from "@/db/knowledge-queries";
 import { getDetailFields } from "@/components/places/detail-field-labels";
+import { smartModel } from "@/lib/ai/model";
 
-const AI_MODEL = "anthropic/claude-sonnet-5";
+// PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts).
+const AI_MODEL = smartModel;
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 
 /**
@@ -121,6 +123,29 @@ function arrivalMode(request: TripRequest, destination: DestinationProfile): Arr
   return "generic";
 }
 
+const dayItemSchema = z.object({
+  time: z.string(),
+  title: z.string(),
+  description: z.string(),
+  tags: z.array(z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]])).min(1),
+  geocodeQuery: z
+    .string()
+    .describe(
+      "지도 좌표 검색(지오코딩) 전용 검색어. title이 한국어 발음 표기(예: '톈즈팡', '우캉루')인 " +
+        "해외 장소는, 지도 서비스가 실제로 찾을 수 있는 현지어 또는 영문 이름으로 쓰세요 " +
+        "(예: '톈즈팡' → 'Tianzifang', '우캉루' → 'Wukang Road'). 국내이거나 title이 이미 " +
+        "지도에서 바로 찾힐 만한 정확한 상호/지명이면 title과 동일하게 써도 됩니다."
+    ),
+});
+
+const dayLabelSchema = z
+  .string()
+  .describe(
+    "그 날짜를 대표하는 2~6글자 핵심 키워드 하나만. label 문장을 줄인 게 아니라, 그 날의 " +
+      "핵심 지역/장소명을 그대로 쓰세요 (예: '다낭 도착', '바나힐', '호이안 구시가지'). " +
+      "문장이나 조사(-에서, -을 등)로 끝나면 안 됩니다."
+  );
+
 const planSchema = z.object({
   dayRegions: z
     .array(z.string())
@@ -133,37 +158,50 @@ const planSchema = z.object({
     z.object({
       day: z.number().int().min(1),
       label: z.string().describe("그 날짜 일정을 한 문장으로 요약한 설명 (예: '다낭 도착 후 미케비치에서 여유로운 시작')."),
-      shortLabel: z
-        .string()
-        .describe(
-          "그 날짜를 대표하는 2~6글자 핵심 키워드 하나만. label 문장을 줄인 게 아니라, 그 날의 " +
-            "핵심 지역/장소명을 그대로 쓰세요 (예: '다낭 도착', '바나힐', '호이안 구시가지'). " +
-            "문장이나 조사(-에서, -을 등)로 끝나면 안 됩니다."
-        ),
-      items: z.array(
-        z.object({
-          time: z.string(),
-          title: z.string(),
-          description: z.string(),
-          tags: z.array(z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]])).min(1),
-          geocodeQuery: z
-            .string()
-            .describe(
-              "지도 좌표 검색(지오코딩) 전용 검색어. title이 한국어 발음 표기(예: '톈즈팡', '우캉루')인 " +
-                "해외 장소는, 지도 서비스가 실제로 찾을 수 있는 현지어 또는 영문 이름으로 쓰세요 " +
-                "(예: '톈즈팡' → 'Tianzifang', '우캉루' → 'Wukang Road'). 국내이거나 title이 이미 " +
-                "지도에서 바로 찾힐 만한 정확한 상호/지명이면 title과 동일하게 써도 됩니다."
-            ),
-        })
-      ),
+      shortLabel: dayLabelSchema,
+      items: z.array(dayItemSchema),
     })
   ),
 });
 
+// PRD v3.0 §16 — 완성된 일정 중 사용자가 지정한 하루치만 다시 작성할 때 쓰는 스키마.
+// dayRegions/day 번호는 호출부가 이미 알고 있으므로 label/shortLabel/items만 받는다.
+const singleDaySchema = z.object({
+  label: z.string().describe("그 날짜 일정을 한 문장으로 요약한 설명."),
+  shortLabel: dayLabelSchema,
+  items: z.array(dayItemSchema),
+});
+
 /**
- * Vercel AI Gateway로 Claude를 호출해 목적지 활동 후보를 참고한 일정 뼈대(시간/제목/
- * 설명/태그)를 짭니다. 실제 출처(영상/블로그) 매칭은 이후 단계에서 항목 제목 기준으로
- * 별도 검색해 붙입니다.
+ * verifiedPlaces 한 건을 AI 프롬프트용 payload로 줄인다. generateItineraryWithAI(전체 생성)와
+ * regenerateSingleDay(하루 재생성, §16)가 같은 모양으로 넘기도록 공유한다.
+ */
+function verifiedPlacePayload(
+  p: PlaceWithDetails,
+  placeRegionLabelById: Map<string, string>,
+  isMustInclude: boolean
+) {
+  return {
+    name: p.name,
+    category: p.category,
+    address: p.address ?? undefined,
+    overview: p.overview ? p.overview.slice(0, 150) : undefined,
+    region: placeRegionLabelById.get(p.id),
+    // PHASE A-BRIDGE STEP 2 — TOUR_API_CATEGORY_LABELS에 없는 코드는 조용히 undefined로 생략(추측 라벨 금지).
+    categoryLabel: p.categoryCode2 ? TOUR_API_CATEGORY_LABELS[p.categoryCode2] : undefined,
+    // getDetailFields()는 /places/[id] 상세 페이지와 동일한 함수 재사용. 프롬프트 길이상 장소당 최대 4개.
+    detailFields:
+      getDetailFields(p.externalContentTypeId, p.detailData)
+        .slice(0, 4)
+        .map((f) => `${f.label}: ${f.value}`)
+        .join(", ") || undefined,
+    mustInclude: isMustInclude ? true : undefined,
+  };
+}
+
+/**
+ * AI(§lib/ai/model.ts)를 호출해 목적지 활동 후보를 참고한 일정 뼈대(시간/제목/설명/태그)를
+ * 짭니다. 실제 출처(영상/블로그) 매칭은 이후 단계에서 항목 제목 기준으로 별도 검색해 붙입니다.
  */
 async function generateItineraryWithAI(
   request: TripRequest,
@@ -213,27 +251,7 @@ async function generateItineraryWithAI(
       timeSlotsHint: DAY_TIME_SLOTS,
       verifiedPlaces:
         verifiedPlaces.length > 0
-          ? verifiedPlaces.map((p) => ({
-              name: p.name,
-              category: p.category,
-              address: p.address ?? undefined,
-              overview: p.overview ? p.overview.slice(0, 150) : undefined,
-              region: placeRegionLabelById.get(p.id),
-              // PHASE A-BRIDGE STEP 2 — TOUR_API_CATEGORY_LABELS에 없는 코드(현재 표본에 없던
-              // A03/A04/B02 등)를 만나면 조용히 undefined로 생략한다 — 추측 라벨을 지어내지 않는다.
-              categoryLabel: p.categoryCode2 ? TOUR_API_CATEGORY_LABELS[p.categoryCode2] : undefined,
-              // getDetailFields()는 /places/[id] 상세 페이지가 쓰는 것과 동일한 함수 재사용 —
-              // 유형별로 의미 있다고 이미 검증된 필드만 나온다(PHASE3H §11.1). 프롬프트 길이
-              // 상 장소당 최대 4개로 제한한다.
-              detailFields:
-                getDetailFields(p.externalContentTypeId, p.detailData)
-                  .slice(0, 4)
-                  .map((f) => `${f.label}: ${f.value}`)
-                  .join(", ") || undefined,
-              // PHASE 2 STEP 2 — mustIncludeSet에 없는 절대다수는 undefined로 생략해 기존
-              // verifiedPlaces payload 모양을 그대로 유지한다(회귀 없음).
-              mustInclude: mustIncludeSet.has(p.id) ? true : undefined,
-            }))
+          ? verifiedPlaces.map((p) => verifiedPlacePayload(p, placeRegionLabelById, mustIncludeSet.has(p.id)))
           : undefined,
       regionalKnowledge: regionalKnowledge.length > 0 ? regionalKnowledge : undefined,
       instructions: [
@@ -814,28 +832,44 @@ function placeSearchQuery(destination: DestinationProfile, place: string): strin
 }
 
 /**
- * 항목별로 그 장소 자체를 검색어로 쓴 전용 풀에서 가장 잘 맞는 소스를 최대 SOURCES_PER_ITEM개
- * 골라 붙이고, 좌표는 항목마다 그대로 지오코딩합니다(검색 쿼터와 무관해 항목 수 제한이 없음).
+ * 검증된 장소(관광공사·검수된 Knowledge)와 매칭되지 않는 항목만, 그 장소 자체를 검색어로 쓴
+ * 전용 풀에서 가장 잘 맞는 소스를 최대 SOURCES_PER_ITEM개 골라 붙입니다. 검증 장소가 매칭되는
+ * 항목은 그 place가 1차 참고자료라 소스 검색을 건너뜁니다(§8/§10 검색 우선순위 사다리).
+ * 좌표는 좌표 신뢰도가 검증된 매칭이면 그 값을 쓰고, 그 외에는 항목마다 지오코딩합니다.
  */
 async function attachSourcesAndLocations(
   request: TripRequest,
   destination: DestinationProfile,
   plan: PlanDay[],
-  verifiedPlaces: PlaceWithDetails[]
+  verifiedPlaces: PlaceWithDetails[],
+  // PRD v3.0 §16 — 하루치만 재생성할 때, 나머지 날짜에서 이미 쓴 소스/채널을 넘겨 재생성된
+  // 날이 소스를 중복 노출하지 않게 한다. 전체 생성 경로는 이 인자를 넘기지 않아 기존과 동일하다.
+  seedUsed?: { sourceIds: Set<string>; channels: Set<string> }
 ): Promise<ItineraryDay[]> {
   const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
   const itemByTitle = new Map(plan.flatMap((d) => d.items).map((it) => [it.title, it]));
   const placeByTitle = new Map(uniqueTitles.map((title) => [title, primaryPlaceQuery(title)] as const));
-  const uniquePlaces = Array.from(new Set(placeByTitle.values())).slice(0, MAX_PLACE_SEARCH_QUERIES);
 
-  // PHASE 14-0 — title이 검증된 TourAPI 장소와 일치하면(좌표 신뢰도까지 검증된 것만) 그 장소로
-  // 표시해, 아래 지오코딩 단계에서 이 항목만 건너뛴다. verifiedPlaces가 비어 있으면(대다수
-  // 목적지) 이 맵도 항상 비어 기존 동작과 완전히 동일하다.
-  const verifiedPlaceByTitle = new Map(
+  // PHASE 14-0 — title이 검증된 장소(관광공사 TourAPI 또는 검수된 Knowledge)와 같은 곳을
+  // 가리키면 그 장소를 반환한다. verifiedPlaces가 비어 있으면(대다수 목적지) 이 맵도 비어
+  // 기존 동작과 완전히 동일하다.
+  const matchedPlaceByTitle = new Map(
     uniqueTitles
       .map((title) => [title, findVerifiedPlace(verifiedPlaces, title)] as const)
-      .filter((entry): entry is [string, PlaceWithDetails] => entry[1] !== null && entry[1].coordinateReliable)
+      .filter((entry): entry is [string, PlaceWithDetails] => entry[1] !== null)
   );
+  // 좌표까지 신뢰할 수 있는 매칭만 라이브 지오코딩을 건너뛰고 그 좌표를 그대로 쓴다.
+  const coordReliableMatchByTitle = new Map(
+    [...matchedPlaceByTitle].filter(([, place]) => place.coordinateReliable)
+  );
+
+  // PRD v3.0 §8/§10 검색 우선순위 사다리 — 검증된 장소(관광공사·검수된 여행 지식)가 이미
+  // 참고자료로 붙는 항목은 그 장소 전용 YouTube/Naver 검색을 하지 않는다(공식 관광정보·검수된
+  // 지식이 영상보다 신뢰할 수 있는 1차 근거다). 매칭되는 검증 장소가 없는 항목만 장소 전용
+  // 검색 대상으로 남긴다 — 지원 지역 일정일수록 신규 search.list 호출이 크게 줄어든다.
+  const placesToSearch = Array.from(
+    new Set(uniqueTitles.filter((title) => !matchedPlaceByTitle.has(title)).map((title) => placeByTitle.get(title)!))
+  ).slice(0, MAX_PLACE_SEARCH_QUERIES);
 
   // 넓은 목적지+목적 쿼리(searchPlan)는 장소 전용 검색이 아예 못 찾았을 때만 쓰는 최후
   // 보충용으로 남겨둡니다 — 이 풀만으로 항목을 채우면 "탕롱수상인형극장"처럼 구체적인 항목에
@@ -843,7 +877,7 @@ async function attachSourcesAndLocations(
   const searchPlan = buildSearchPlan(request, destination.name);
   const [placePoolEntries, fallbackPool, rejectedSourceIds, locationEntries] = await Promise.all([
     Promise.all(
-      uniquePlaces.map(
+      placesToSearch.map(
         async (place) => [place, await fetchQueryCandidates(placeSearchQuery(destination, place))] as const
       )
     ),
@@ -854,8 +888,8 @@ async function attachSourcesAndLocations(
     }),
     Promise.all(
       uniqueTitles.map(async (title) => {
-        const verified = verifiedPlaceByTitle.get(title);
-        if (verified) return [title, { lat: Number(verified.lat), lng: Number(verified.lng) }] as const;
+        const matched = coordReliableMatchByTitle.get(title);
+        if (matched) return [title, { lat: Number(matched.lat), lng: Number(matched.lng) }] as const;
         return [title, await geocodeItem(destination, itemByTitle.get(title)!.geocodeQuery || title)] as const;
       })
     ),
@@ -865,8 +899,8 @@ async function attachSourcesAndLocations(
   const approvedFallbackPool = fallbackPool.filter((s) => !rejectedSourceIds.has(s.id));
 
   // 같은 소스가 여러 항목에 중복 노출되지 않도록, 이미 쓴 소스는 다음 항목에서 제외하고 고릅니다.
-  const usedSourceIds = new Set<string>();
-  const usedChannels = new Set<string>();
+  const usedSourceIds = new Set<string>(seedUsed?.sourceIds ?? []);
+  const usedChannels = new Set<string>(seedUsed?.channels ?? []);
   const sourcesByTitle = new Map<string, Source[]>();
 
   // 1단계: 모든 항목에 그 장소 전용 검색 결과부터 배정합니다. 항목 하나가 부족하다고 바로
@@ -874,6 +908,12 @@ async function attachSourcesAndLocations(
   // 넓혀서 채우는 건 전체 항목의 장소 전용 배정이 끝난 뒤(2단계)로 미룹니다.
   const shortTitles: string[] = [];
   for (const title of uniqueTitles) {
+    // 검증된 장소가 붙는 항목은 그 place 참고자료(관광공사·Knowledge)가 1차 근거이므로,
+    // 장소 전용 검색도 목적지 단위 보충도 하지 않는다(§8/§10 사다리). sources는 빈 배열로 둔다.
+    if (matchedPlaceByTitle.has(title)) {
+      sourcesByTitle.set(title, []);
+      continue;
+    }
     const item = itemByTitle.get(title)!;
     const place = placeByTitle.get(title)!;
     const placePool = poolByPlace.get(place) ?? [];
@@ -929,7 +969,7 @@ async function attachSourcesAndLocations(
           ...it,
           sources: sourcesByTitle.get(it.title)!,
           location: locationByTitle.get(it.title) ?? null,
-          placeId: verifiedPlaceByTitle.get(it.title)?.id,
+          placeId: matchedPlaceByTitle.get(it.title)?.id,
         })
       )
     ),
@@ -994,30 +1034,25 @@ function ensureMustIncludePlaces(
   return nextDays;
 }
 
-export async function generateItinerary(
-  request: TripRequest,
-  // PHASE 2 STEP 2 — /places/plan(§generateItineraryFromPlacesAction)이 넘기는 mustInclude 신호.
-  // 생략하면(기존 /plan/new 경로 전부) 완전히 이전과 동일하게 동작한다.
-  options?: { mustIncludePlaceIds?: string[] }
-): Promise<Itinerary> {
-  const mustIncludePlaceIds = options?.mustIncludePlaceIds ?? [];
-  const destination = resolveDestination(request.destination);
-  const days = Math.max(1, request.nights + 1);
-
-  // PHASE 14-0/14-1 — Pipeline B(TourAPI+Knowledge)가 실제 데이터를 가진 지역이면 검증된 장소/
-  // 지식을 조회해 AI 프롬프트의 참고 자료로 공급한다(§1 매핑 참고). 매핑이 없는(대다수) 목적지는
-  // 빈 배열이라 이 조회 자체가 사실상 no-op — 기존 동작과 100% 동일하게 유지된다. "제주도"처럼
-  // 지역이 여러 개(제주시+서귀포시) 묶여 들어올 수 있어, 지역별로 따로 조회한 뒤 각 place/
-  // knowledge에 어느 지역 소속인지 라벨을 붙여 넘긴다 — 1차로는 섬 전체 데이터를 다 보여주되,
-  // 2차 시/군 구분은 라벨을 근거로 AI의 dayRegions 판단에 맡긴다.
-  const tourApiRegions = resolveTourApiRegions(destination.name);
-  // PHASE 13-2 — 같은 region.code로 TourAPI(getPlacesByRegion)와 Knowledge-derived(§
-  // getKnowledgeDerivedPlacesByRegion) 후보를 함께 조회해 verifiedPlaces에 합친다(B안: provenance는
-  // 각 함수 반환값 자체가 유지하고, 여기서는 단순 병합만 한다). KnowledgeDerivedPlace가
-  // PlaceWithDetails를 그대로 extends하므로(overview에 Knowledge summary 포함) 아래
-  // generateItineraryWithAI/attachSourcesAndLocations/ensureMustIncludePlaces는 수정 없이도
-  // 두 출처를 구분 없이 동일하게 다룬다. tourApiRegions가 비어 있으면(대다수 목적지) 이전과
-  // 100% 동일하게 no-op이다.
+/**
+ * PHASE 14-0/14-1 — Pipeline B(TourAPI+Knowledge)가 실제 데이터를 가진 지역이면 검증된 장소/
+ * 지식을 조회해 AI 프롬프트의 참고 자료로 공급한다(§1 매핑 참고). 매핑이 없는(대다수) 목적지는
+ * 빈 배열이라 이 조회 자체가 사실상 no-op — 기존 동작과 100% 동일하게 유지된다. "제주도"처럼
+ * 지역이 여러 개(제주시+서귀포시) 묶여 들어올 수 있어, 지역별로 따로 조회한 뒤 각 place/
+ * knowledge에 어느 지역 소속인지 라벨을 붙여 넘긴다 — 1차로는 섬 전체 데이터를 다 보여주되,
+ * 2차 시/군 구분은 라벨을 근거로 AI의 dayRegions 판단에 맡긴다.
+ *
+ * PHASE 13-2 — 같은 region.code로 TourAPI(getPlacesByRegion)와 Knowledge-derived
+ * (getKnowledgeDerivedPlacesByRegion) 후보를 함께 조회해 verifiedPlaces에 합친다.
+ *
+ * generateItinerary(전체 생성)와 reviseItineraryDay(하루 재생성)가 공유한다(§16).
+ */
+async function loadRegionalContext(destinationName: string): Promise<{
+  verifiedPlaces: PlaceWithDetails[];
+  placeRegionLabelById: Map<string, string>;
+  regionalKnowledge: (RegionalKnowledgeItem & { region: string })[];
+}> {
+  const tourApiRegions = resolveTourApiRegions(destinationName);
   const verifiedPlaceGroups = await Promise.all(
     tourApiRegions.map(async (region) => {
       const [tourApiPlaces, knowledgePlaces] = await Promise.all([
@@ -1040,6 +1075,20 @@ export async function generateItinerary(
   const regionalKnowledge = regionalKnowledgeGroups.flatMap((g) =>
     g.items.map((item) => ({ ...item, region: g.label }))
   );
+  return { verifiedPlaces, placeRegionLabelById, regionalKnowledge };
+}
+
+export async function generateItinerary(
+  request: TripRequest,
+  // PHASE 2 STEP 2 — /places/plan(§generateItineraryFromPlacesAction)이 넘기는 mustInclude 신호.
+  // 생략하면(기존 /plan/new 경로 전부) 완전히 이전과 동일하게 동작한다.
+  options?: { mustIncludePlaceIds?: string[] }
+): Promise<Itinerary> {
+  const mustIncludePlaceIds = options?.mustIncludePlaceIds ?? [];
+  const destination = resolveDestination(request.destination);
+  const days = Math.max(1, request.nights + 1);
+
+  const { verifiedPlaces, placeRegionLabelById, regionalKnowledge } = await loadRegionalContext(destination.name);
 
   // 로딩 화면에서 클라이언트가 이미 같은 캐시 키로 호출해뒀을 가능성이 높으므로(/api/trip-tips),
   // 일정 생성과 병렬로 돌려도 대부분 캐시 히트라 추가 지연이 거의 없습니다.
@@ -1107,5 +1156,177 @@ export async function generateItinerary(
     // PHASE 3 — 정상 경로는 false를 굳이 명시하지 않아도 되지만(옵셔널), 이 반환 지점이
     // usedFallback의 유일한 출처임을 명확히 하기 위해 항상 실제 값을 싣는다.
     usedFallback,
+  };
+}
+
+/**
+ * PRD v3.0 §16 — 이미 완성된 일정 중 dayNumber 하루치만 userInstruction에 따라 다시 작성한다.
+ * 전체 재생성과 달리 dayRegions 없이 label/shortLabel/items만 받고, 앞뒤 날짜의 연결점과
+ * "이 날에 이미 있던 place 항목"을 컨텍스트로 넘겨 동선이 튀지 않게 한다.
+ */
+async function regenerateSingleDay(
+  itinerary: Itinerary,
+  destination: DestinationProfile,
+  dayNumber: number,
+  instruction: string,
+  verifiedPlaces: PlaceWithDetails[],
+  placeRegionLabelById: Map<string, string>,
+  regionalKnowledge: (RegionalKnowledgeItem & { region: string })[]
+): Promise<PlanDay> {
+  const { request } = itinerary;
+  const dayNumbers = itinerary.days.map((d) => d.day);
+  const totalDays = itinerary.days.length;
+  const isFirstDay = dayNumber === Math.min(...dayNumbers);
+  const isLastDay = dayNumber === Math.max(...dayNumbers);
+  const mode = arrivalMode(request, destination);
+
+  const targetDay = itinerary.days.find((d) => d.day === dayNumber)!;
+  const prevDay = itinerary.days.find((d) => d.day === dayNumber - 1);
+  const nextDay = itinerary.days.find((d) => d.day === dayNumber + 1);
+
+  // 이 날에 이미 있던 place 항목(사용자가 /places로 추가했을 수 있음) — 빼라는 지시가 없으면 유지.
+  const keepUnlessRemoved = targetDay.items.filter((it) => it.placeId).map((it) => it.title);
+  const arrivalWord = mode === "ferry" ? "항구/여객터미널 도착" : mode === "airport" ? "공항 도착" : "도착";
+  const departureWord = mode === "ferry" ? "항구/여객터미널로 출발" : mode === "airport" ? "공항으로 출발" : "출발(귀가 이동)";
+
+  const { output } = await generateText({
+    model: AI_MODEL,
+    output: Output.object({ schema: singleDaySchema }),
+    system:
+      "당신은 TripTube AI의 여행 일정 플래너입니다. 이미 완성된 여행 일정 중 사용자가 지정한 하루치만, " +
+      "사용자의 수정 지시(userInstruction)에 따라 다시 작성합니다. 나머지 날짜는 그대로 유지되며, 당신이 다시 쓴 " +
+      "날짜만 최종 일정에 반영됩니다. userInstruction을 그 어떤 조건보다 최우선으로 반영하세요. 각 항목 title은 " +
+      "이후 지도 좌표 검색과 참고자료 매칭에 그대로 쓰이므로 구체적인 장소/활동명 하나로 쓰세요.",
+    prompt: JSON.stringify({
+      destination: destination.name,
+      region: request.region,
+      totalDays,
+      dayToRewrite: dayNumber,
+      userInstruction: instruction,
+      request: {
+        memberType: request.memberType,
+        memberCount: request.memberCount,
+        nights: request.nights,
+        month: request.month,
+        purposes: request.purposes.map((p) => ({ id: p.id, label: PURPOSE_LABELS[p.id], priority: p.priority })),
+        notes: request.notes || undefined,
+      },
+      currentVersionOfThisDay: {
+        label: targetDay.label,
+        items: targetDay.items.map((it) => ({ time: it.time, title: it.title, description: it.description })),
+      },
+      otherDays: itinerary.days
+        .filter((d) => d.day !== dayNumber)
+        .map((d) => ({ day: d.day, label: d.label, places: d.items.map((it) => it.title) })),
+      previousDayLastStop:
+        prevDay && prevDay.items.length > 0 ? prevDay.items[prevDay.items.length - 1].title : undefined,
+      nextDayFirstStop: nextDay && nextDay.items.length > 0 ? nextDay.items[0].title : undefined,
+      keepTheseUnlessInstructionRemovesThem: keepUnlessRemoved.length > 0 ? keepUnlessRemoved : undefined,
+      timeSlotsHint: DAY_TIME_SLOTS,
+      verifiedPlaces:
+        verifiedPlaces.length > 0
+          ? verifiedPlaces.map((p) => verifiedPlacePayload(p, placeRegionLabelById, false))
+          : undefined,
+      regionalKnowledge: regionalKnowledge.length > 0 ? regionalKnowledge : undefined,
+      instructions: [
+        `${dayNumber}일차 하루 일정만 userInstruction에 따라 다시 작성하세요. userInstruction이 최우선입니다.`,
+        "otherDays.places에 이미 있는 장소는 다시 넣지 마세요(같은 곳 중복 방문 금지). userInstruction이 명시적으로 요구하면 예외.",
+        "하루 3~5개 항목을 시간 순으로 배치하세요 (time 형식 HH:MM). 같은 날 안에서는 지리적으로 한 방향 동선이 되게 하세요.",
+        keepUnlessRemoved.length > 0
+          ? "keepTheseUnlessInstructionRemovesThem의 장소는 userInstruction이 빼라고 하지 않는 한 title을 그대로 유지하세요."
+          : null,
+        prevDay ? "previousDayLastStop(전날 마지막 지점, 보통 숙소) 근처에서 이 날을 시작하세요." : null,
+        nextDay
+          ? "이 날의 마지막 항목은 nextDayFirstStop(다음날 시작 지점)과 가까운 지역의 숙소여야 합니다. title에 구체적인 지역명을 포함하세요."
+          : null,
+        isFirstDay
+          ? `이 날은 여행 첫날입니다. 첫 항목은 반드시 ${destination.name}의 ${arrivalWord}여야 합니다(아는 정확한 공항/터미널명을 쓰세요). ` +
+            "단, request.notes에 실제 교통수단(배·기차·자차 등)이 명시돼 있으면 그쪽을 우선하세요."
+          : null,
+        isLastDay
+          ? `이 날은 여행 마지막 날입니다. 마지막 항목은 반드시 ${destination.name}의 ${departureWord}여야 하고, 항목은 3개 이하로 구성하세요.`
+          : null,
+        "각 항목의 tags는 request.purposes의 id 중에서 고르세요.",
+        "각 항목의 title은 지도에 찍을 수 있는 장소 하나만 가리켜야 합니다 — 'A와 B'로 두 장소를 합치지 마세요.",
+        request.region === "해외"
+          ? "각 항목의 geocodeQuery는 지도 서비스가 찾을 수 있는 현지어/영문 이름으로 쓰세요(예: '톈즈팡' → 'Tianzifang'). 이미 유명 랜드마크명이면 title과 동일해도 됩니다."
+          : "각 항목의 geocodeQuery는 보통 title과 동일하게 쓰면 됩니다.",
+        verifiedPlaces.length > 0
+          ? "verifiedPlaces가 있으면 그 장소명을 우선 활용해 title에 그대로 쓰세요. 단 verifiedPlaces에서 검증됐다고 표현할 수 있는 건 실제 그 목록에 있는 장소뿐입니다."
+          : null,
+        regionalKnowledge.length > 0 ? "regionalKnowledge는 참고 정보일 뿐 필수 반영 조건이 아닙니다." : null,
+      ].filter((v): v is string => v !== null),
+    }),
+  });
+
+  if (output.items.length === 0) {
+    throw new Error("AI returned an empty day plan");
+  }
+  return { day: dayNumber, label: output.label, shortLabel: output.shortLabel, items: output.items };
+}
+
+/**
+ * PRD v3.0 §16 — 완성·저장된 일정 중 dayNumber 하루만 instruction에 따라 재생성한다. 나머지
+ * 날짜는 그대로 두고, 재생성한 날에 대해서만 소스/좌표를 다시 붙인다(§8 검색 사다리 포함).
+ * instruction은 이 호출에서만 쓰고 request.notes에 영구 저장하지 않는다. AI가 2회 다 실패하면
+ * throw한다(호출부가 "수정 실패"로 처리) — 조용히 원본을 바꾸지 않는다.
+ */
+export async function reviseItineraryDay(
+  itinerary: Itinerary,
+  dayNumber: number,
+  instruction: string
+): Promise<Itinerary> {
+  if (!itinerary.days.some((d) => d.day === dayNumber)) return itinerary;
+
+  const baseDestination = resolveDestination(itinerary.request.destination);
+  const destination: DestinationProfile = { ...baseDestination, region: itinerary.request.region };
+  const { verifiedPlaces, placeRegionLabelById, regionalKnowledge } = await loadRegionalContext(baseDestination.name);
+
+  let newDay: PlanDay;
+  try {
+    newDay = await regenerateSingleDay(
+      itinerary,
+      destination,
+      dayNumber,
+      instruction,
+      verifiedPlaces,
+      placeRegionLabelById,
+      regionalKnowledge
+    );
+  } catch (firstError) {
+    console.error("day revision failed, retrying once:", firstError);
+    newDay = await regenerateSingleDay(
+      itinerary,
+      destination,
+      dayNumber,
+      instruction,
+      verifiedPlaces,
+      placeRegionLabelById,
+      regionalKnowledge
+    );
+  }
+
+  // 나머지 날짜에서 이미 쓴 소스/채널을 시드로 넘겨, 재생성한 날이 소스를 중복 노출하지 않게 한다.
+  const seedSourceIds = new Set<string>();
+  const seedChannels = new Set<string>();
+  for (const d of itinerary.days) {
+    if (d.day === dayNumber) continue;
+    for (const it of d.items) {
+      for (const s of it.sources ?? []) {
+        seedSourceIds.add(s.id);
+        seedChannels.add(channelOrSite(s));
+      }
+    }
+  }
+
+  const [attachedDay] = await attachSourcesAndLocations(itinerary.request, destination, [newDay], verifiedPlaces, {
+    sourceIds: seedSourceIds,
+    channels: seedChannels,
+  });
+
+  return {
+    ...itinerary,
+    days: itinerary.days.map((d) => (d.day === dayNumber ? attachedDay : d)),
+    generatedAt: new Date().toISOString(),
   };
 }
