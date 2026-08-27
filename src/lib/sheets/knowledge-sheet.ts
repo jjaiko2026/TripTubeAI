@@ -45,6 +45,7 @@ const HEADER = [
   "recommendation_safety",
   "review_note",
   "admin_status",
+  "publishable", // Q9(STEP8/9) — 기존 열 순서/의미는 전혀 안 바꾸고 맨 끝에만 추가한다.
 ] as const;
 const COL = Object.fromEntries(HEADER.map((name, i) => [name, i])) as Record<(typeof HEADER)[number], number>;
 // content-sheet.ts의 MAX_EXPORT_QUERIES(1000)와 동일한 안전 상한 취지 — 현재 582건이라 여유 있음.
@@ -102,12 +103,20 @@ const REVIEW_FIELDS: ReviewField[] = [
 const STATUS_OPTIONS = ["confirmed", "review", "rejected"] as const;
 const VALID_STATUS = new Set<string>(STATUS_OPTIONS);
 
+// Q9(STEP8/9) — "이 Knowledge를 독립 콘텐츠 카드로 공개해도 되는가"는 status(Q7, 사실성/검수
+// 상태)와 완전히 별개 질문이다. 빈칸은 "아직 미검토"(publishable=null)이며 옵션 목록에 넣지
+// 않는다 — status의 unverified와 동일한 취지.
+const PUBLISHABLE_LABELS = ["공개 가능", "공개 부적합"] as const;
+const PUBLISHABLE_LABEL_TO_CODE: Record<string, string> = { "공개 가능": "yes", "공개 부적합": "no" };
+const PUBLISHABLE_CODE_TO_LABEL: Record<string, string> = { yes: "공개 가능", no: "공개 부적합" };
+
 // PILOT 후속 — review_note(Q8)/admin_status(Q7) 두 열의 입력 혼동이 실제 검수에서 발견됐다(30건
 // 전원 스왑 입력). 헤더 텍스트 자체는 import의 열 매칭 키라 바꿀 수 없으므로, 셀 메모(hover 시
 // 보이는 설명)로만 안내한다 — import 로직/헤더 문자열은 전혀 건드리지 않는다.
 const HEADER_NOTES: Partial<Record<(typeof HEADER)[number], string>> = {
   admin_status: "Q7 최종 판정 — 이 열에는 confirmed / review / rejected 중 하나만 입력하세요. 판단 근거나 메모는 이 열이 아니라 review_note(Q8) 열에 적어주세요.",
   review_note: "Q8 판정 근거 / 검토 메모 — 자유 텍스트로 판단 근거를 적는 열입니다. confirmed / review / rejected 값은 이 열이 아니라 admin_status(Q7) 열에 입력하세요.",
+  publishable: "Q9 공개 적합성 — status(Q7, 사실성 검수)와는 별개 질문입니다. '이 Knowledge를 /places의 독립 콘텐츠 카드로 사용자에게 그대로 보여줘도 되는가'만 판단하세요. 리스트형 콘텐츠(예: 'OO 매장 12곳'), 특정 지점 없는 체인 브랜드, 막연한 위치는 '공개 부적합'을 선택하세요.",
 };
 
 // PHASE 11-2 — confirmed의 필수조건이 아니라, Place Resolution(place_id 매칭)이 아직 필요한
@@ -147,6 +156,7 @@ export async function exportKnowledgeToSheet(): Promise<number> {
     }
     line[COL.review_note] = row.reviewNote ?? "";
     line[COL.admin_status] = VALID_STATUS.has(row.status) ? row.status : "";
+    line[COL.publishable] = row.publishable ? (PUBLISHABLE_CODE_TO_LABEL[row.publishable] ?? "") : "";
     return line;
   });
 
@@ -155,6 +165,7 @@ export async function exportKnowledgeToSheet(): Promise<number> {
     await setDropdownColumn(KNOWLEDGE_SHEET_NAME, COL[field.column], field.labels, dataRows.length);
   }
   await setDropdownColumn(KNOWLEDGE_SHEET_NAME, COL.admin_status, [...STATUS_OPTIONS], dataRows.length);
+  await setDropdownColumn(KNOWLEDGE_SHEET_NAME, COL.publishable, [...PUBLISHABLE_LABELS], dataRows.length);
   await setHeaderNotes(
     KNOWLEDGE_SHEET_NAME,
     Object.fromEntries(
@@ -277,6 +288,7 @@ export async function importKnowledgeStatusFromSheet(
 
     const reviewNoteRaw = cell(row, "review_note");
     const statusRaw = cell(row, "admin_status");
+    const publishableRaw = cell(row, "publishable");
 
     // 시트에 채워진 값을 그대로 파싱한 "제안값" — 아직 DB와 비교하기 전 단계다.
     const rawUpdate: Partial<typeof videoKnowledge.$inferInsert> = {};
@@ -294,6 +306,11 @@ export async function importKnowledgeStatusFromSheet(
     if (statusRaw) {
       if (!VALID_STATUS.has(statusRaw)) invalid = true;
       else rawUpdate.status = statusRaw;
+    }
+    if (publishableRaw) {
+      const code = PUBLISHABLE_LABEL_TO_CODE[publishableRaw];
+      if (!code) invalid = true;
+      else rawUpdate.publishable = code;
     }
     if (reviewNoteRaw) rawUpdate.reviewNote = reviewNoteRaw;
 
