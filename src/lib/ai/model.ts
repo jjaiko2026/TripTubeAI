@@ -12,8 +12,13 @@ import { google } from "@ai-sdk/google";
  * (generateItineraryFallback, trip-tips 결정론적 안내, recommendPlaces 빈 배열 등).
  */
 
+// gemini-3.6-flash: 이 API 키에서 사용 가능하고 무료 티어에 포함되는 현행 안정 모델
+// (기존 코드가 gateway로 쓰던 "google/gemini-3.6-flash"와 동일, 구조화 출력 검증됨).
+// 일정 생성 품질을 더 올리려면 smartModel을 "gemini-3.7-flash"나 "gemini-3.1-pro-preview"로
+// 바꾸면 된다 — 단 무료 티어/안정성은 구현 시점 공식 문서로 확인.
+
 /** 일정 생성·수정처럼 구조화된 멀티데이 JSON을 안정적으로 만들어야 하는 호출. */
-export const smartModel = google("gemini-2.5-flash");
+export const smartModel = google("gemini-3.6-flash");
 
 /** 대화/요약/목록에서 고르기처럼 창작이 아닌 가벼운 호출. */
-export const fastModel = google("gemini-2.0-flash");
+export const fastModel = google("gemini-3.6-flash");
