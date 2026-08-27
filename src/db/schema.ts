@@ -224,6 +224,9 @@ export const places = pgTable(
     homepage: text("homepage"),
     tel: text("tel"),
     overview: text("overview"),
+    // TourAPI 대표 이미지(areaBasedList2 firstimage2 썸네일 우선, 없으면 firstimage). 장소 카드
+    // 썸네일용. YouTube/Naver 유래(externalSource IS NULL)나 이미지 없는 TourAPI 행은 null.
+    firstImage: text("first_image"),
     // TourAPI 원본 갱신 시각(modifiedtime, YYYYMMDDHHmmss 파싱). 우리 시스템이 손댄 시각인
     // updatedAt과 의미가 다르다 — 파싱 실패/빈 값은 에러 대신 null로 처리한다.
     externalModifiedAt: timestamp("external_modified_at", { withTimezone: true }),
