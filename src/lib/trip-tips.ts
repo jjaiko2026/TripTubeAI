@@ -2,9 +2,11 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { Region, TripTips } from "@/lib/types";
 import { getCachedTripTips, saveCachedTripTips, tripTipsCacheKey } from "@/db/trip-tips-cache";
+import { fastModel } from "@/lib/ai/model";
 
 // 창작이 아니라 일반 지식 요약이라 저렴하고 빠른 모델로 충분합니다 (일정 생성용 AI_MODEL과는 별개).
-const TRIP_TIPS_MODEL = "google/gemini-3.6-flash";
+// PRD v3.0 §20 — provider 직결(§lib/ai/model.ts).
+const TRIP_TIPS_MODEL = fastModel;
 
 /**
  * PHASE 7 — AI 호출이 실패했을 때 완전히 빈 값(과거 EMPTY_TIPS) 대신 쓰는 결정론적 대체 정보.

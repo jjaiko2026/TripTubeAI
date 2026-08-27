@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { convertToModelMessages, createUIMessageStreamResponse, streamText, toUIMessageStream } from "ai";
-import { buildTripChatSystemPrompt, TRIP_CHAT_MODEL, updateTripDraftTool, type TripChatUIMessage } from "@/lib/trip-chat";
+import { buildTripChatSystemPrompt, updateTripDraftTool, type TripChatUIMessage } from "@/lib/trip-chat";
+import { fastModel } from "@/lib/ai/model";
 import { defaultTripRequest } from "@/lib/plan-defaults";
 import type { TripRequest } from "@/lib/types";
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   const { messages, currentDraft }: { messages: TripChatUIMessage[]; currentDraft?: TripRequest } = await req.json();
 
   const result = streamText({
-    model: TRIP_CHAT_MODEL,
+    model: fastModel,
     system: buildTripChatSystemPrompt(currentDraft ?? defaultTripRequest()),
     messages: await convertToModelMessages(messages),
     tools: {

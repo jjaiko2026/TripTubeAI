@@ -27,8 +27,10 @@ import {
   type RegionalKnowledgeItem,
 } from "@/db/knowledge-queries";
 import { getDetailFields } from "@/components/places/detail-field-labels";
+import { smartModel } from "@/lib/ai/model";
 
-const AI_MODEL = "anthropic/claude-sonnet-5";
+// PRD v3.0 §20 — Vercel AI Gateway 직결 문자열 대신 provider 직결 모델 인스턴스를 쓴다.
+const AI_MODEL = smartModel;
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 
 /**
