@@ -431,6 +431,7 @@ function mapKnowledgeDerivedPlaceRow(row: KnowledgeDerivedPlaceRow): KnowledgeDe
     homepage: getHomepageDisplayStatus(null),
     tel: null,
     overview: content.summary.trim(),
+    firstImage: null, // Knowledge-derived 장소는 유튜브 출처라 장소 사진 소스가 없다
     externalContentTypeId: null,
     categoryCode1: null,
     categoryCode2: null,

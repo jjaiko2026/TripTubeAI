@@ -24,17 +24,24 @@ const REGIONS = [
 
 const DEFAULT_REGION_CODE: (typeof REGIONS)[number]["code"] = "KR-SEOUL-CITY";
 
-// TourAPI contentTypeId 또는 Knowledge-derived category를 사람이 읽는 3개 버킷으로 묶는다.
-const PLACE_BUCKETS = [
-  { key: "sight", label: "관광·명소" },
-  { key: "food", label: "맛집" },
-  { key: "etc", label: "체험·쇼핑·숙소" },
-] as const;
+const UNKNOWN_DISTRICT = "지역 미상";
 
-function placeBucket(p: { externalContentTypeId: string | null; category: string }): (typeof PLACE_BUCKETS)[number]["key"] {
-  if (p.externalContentTypeId === "39" || p.category === "food") return "food";
-  if (p.externalContentTypeId === "12" || p.externalContentTypeId === "14" || p.category === "tourism") return "sight";
-  return "etc";
+/**
+ * 주소에서 가장 세부적인 행정단위를 뽑아 장소를 그 단위로 묶는다(사용자 요청: 동/읍/면 정렬).
+ * 국내: 동/읍/면 > 구 > 시/군 순으로 시도. 일본(도쿄/오사카): "..., Taito City, ..." 형태의
+ * City/Ward. 어느 것도 못 뽑으면 UNKNOWN_DISTRICT. 주소가 없는 Knowledge 장소도 여기로 모인다.
+ */
+function districtOf(address: string | null): string {
+  if (!address) return UNKNOWN_DISTRICT;
+  const dong = address.match(/([가-힣]{1,6}(?:\d+가)?(?:동|읍|면))(?=\s|,|$|\d)/);
+  if (dong) return dong[1];
+  const gu = address.match(/([가-힣]{1,6}구)(?=\s|,|$)/);
+  if (gu) return gu[1];
+  const si = address.match(/([가-힣]{2,6}(?:시|군))(?=\s|,|$)/);
+  if (si) return si[1];
+  const jp = address.match(/,\s*([A-Za-z][A-Za-z .'-]*?(?:City|Ward))\b/i) ?? address.match(/\b([A-Za-z]+-(?:ku|shi|cho))\b/i);
+  if (jp) return jp[1].trim();
+  return UNKNOWN_DISTRICT;
 }
 
 function resolveRegionCode(
@@ -94,10 +101,20 @@ export default async function PlacesPage({
   // TourAPI 장소를 먼저(주소/좌표가 있음), 그 뒤에 Knowledge-derived 장소를 붙인다.
   const places = [...tourApiPlaces, ...knowledgePlaces];
 
-  const sections = PLACE_BUCKETS.map((bucket) => ({
-    ...bucket,
-    places: places.filter((p) => placeBucket(p) === bucket.key),
-  })).filter((section) => section.places.length > 0);
+  // 동/읍/면(없으면 구/시) 단위로 그룹핑. 그룹은 가나다순, "지역 미상"은 항상 맨 뒤.
+  const byDistrict = new Map<string, typeof places>();
+  for (const p of places) {
+    const key = districtOf(p.address);
+    if (!byDistrict.has(key)) byDistrict.set(key, []);
+    byDistrict.get(key)!.push(p);
+  }
+  const sections = [...byDistrict.entries()]
+    .map(([district, ps]) => ({ district, places: ps }))
+    .sort((a, b) => {
+      if (a.district === UNKNOWN_DISTRICT) return 1;
+      if (b.district === UNKNOWN_DISTRICT) return -1;
+      return a.district.localeCompare(b.district, "ko");
+    });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
@@ -168,9 +185,9 @@ export default async function PlacesPage({
       ) : (
         <div className="flex flex-col gap-10">
           {sections.map((section) => (
-            <section key={section.key}>
+            <section key={section.district}>
               <h2 className="mb-4 text-lg font-medium">
-                {section.label} <span className="text-sm font-normal text-muted-foreground">{section.places.length}곳</span>
+                {section.district} <span className="text-sm font-normal text-muted-foreground">{section.places.length}곳</span>
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {section.places.map((place) => (

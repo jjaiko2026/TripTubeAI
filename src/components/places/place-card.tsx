@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarCheck, Globe, TriangleAlert } from "lucide-react";
+import { CalendarCheck, Globe, ImageOff, TriangleAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { PlaceWithDetails } from "@/db/queries";
@@ -40,9 +40,22 @@ export function PlaceCard({
   const typeLabel = place.externalContentTypeId
     ? CONTENT_TYPE_LABEL[place.externalContentTypeId]
     : GENERIC_CATEGORY_LABEL[place.category];
+  // TourAPI 대표 이미지. tong.visitkorea.or.kr이 http로 오는 경우가 있어 https로 강제(혼합
+  // 콘텐츠 차단 방지). next/image는 원격 호스트 등록/최적화 프록시 이슈가 있어 일반 img + lazy.
+  const imageUrl = place.firstImage ? place.firstImage.replace(/^http:\/\//i, "https://") : null;
 
   return (
     <Card hover>
+      <Link href={`/places/${place.id}${linkQuery ?? ""}`} className="block">
+        <div className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden bg-muted">
+          {imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+          ) : (
+            <ImageOff className="h-6 w-6 text-muted-foreground/40" />
+          )}
+        </div>
+      </Link>
       {/* 카드 헤더(이름/주소/카테고리)만 상세 페이지로 연결한다 — CardContent의 홈페이지
           외부 링크(<a>)와 중첩되면 안 되므로 헤더만 따로 감싼다. */}
       <Link href={`/places/${place.id}${linkQuery ?? ""}`} className="block">

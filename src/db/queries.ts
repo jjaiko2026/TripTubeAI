@@ -247,6 +247,8 @@ export interface PlaceWithDetails {
   homepage: HomepageDisplay;
   tel: string | null;
   overview: string | null;
+  /** TourAPI 대표 이미지 URL(장소 카드 썸네일용). 없으면 null. */
+  firstImage: string | null;
   externalContentTypeId: string | null;
   /** TourAPI 대/중분류(cat1/cat2 원본, 예: "A02"/"A0206"). PHASE A-BRIDGE STEP 1에서 실측
    *  확인한 실제 코드 체계 — src/lib/itinerary.ts의 TOUR_API_CATEGORY_LABELS가 사람이 읽는
@@ -295,6 +297,7 @@ export async function getPlacesByRegion(regionCode: string): Promise<PlaceWithDe
       homepage: places.homepage,
       tel: places.tel,
       overview: places.overview,
+      firstImage: places.firstImage,
       externalContentTypeId: places.externalContentTypeId,
       categoryCode1: places.categoryCode1,
       categoryCode2: places.categoryCode2,
@@ -319,6 +322,7 @@ export async function getPlacesByRegion(regionCode: string): Promise<PlaceWithDe
     homepage: getHomepageDisplayStatus(row.homepage),
     tel: row.tel,
     overview: row.overview,
+    firstImage: row.firstImage,
     externalContentTypeId: row.externalContentTypeId,
     categoryCode1: row.categoryCode1,
     categoryCode2: row.categoryCode2,
@@ -350,6 +354,7 @@ export async function getPlaceById(id: string): Promise<PlaceWithDetails | null>
       homepage: places.homepage,
       tel: places.tel,
       overview: places.overview,
+      firstImage: places.firstImage,
       externalContentTypeId: places.externalContentTypeId,
       categoryCode1: places.categoryCode1,
       categoryCode2: places.categoryCode2,
@@ -377,6 +382,7 @@ export async function getPlaceById(id: string): Promise<PlaceWithDetails | null>
     homepage: getHomepageDisplayStatus(row.homepage),
     tel: row.tel,
     overview: row.overview,
+    firstImage: row.firstImage,
     externalContentTypeId: row.externalContentTypeId,
     categoryCode1: row.categoryCode1,
     categoryCode2: row.categoryCode2,
