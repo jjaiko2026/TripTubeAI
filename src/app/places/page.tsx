@@ -2,10 +2,11 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { auth } from "@clerk/nextjs/server";
 import { getPlacesByRegion } from "@/db/queries";
-import { getConfirmedRegionalCourses } from "@/db/knowledge-queries";
+import { getConfirmedRegionalCourses, getConfirmedRegionalKnowledgeByType } from "@/db/knowledge-queries";
 import { PlaceCard } from "@/components/places/place-card";
 import { PlacesMap } from "@/components/places/places-map";
 import { ConfirmedCourseSection } from "@/components/places/confirmed-course-section";
+import { ConfirmedKnowledgeSection } from "@/components/places/confirmed-knowledge-section";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getPlacesTripContext, buildPlacesQuery, buildPlaceDetailQuery } from "@/lib/places-trip-context";
@@ -15,10 +16,15 @@ import { PURPOSE_LABELS } from "@/lib/purposes";
 // 기대하는 regions.code와 동일한 값). 잘못된/미지정 region 쿼리 파라미터는 서울로 폴백한다
 // (단, itineraryId가 있는데 그 여행지가 TourAPI 미지원 지역이면 서울로 폴백하지 않는다 —
 // 아래 unsupportedTrip 분기 참고, PHASE 2 STEP 3 감사에서 발견한 위험 방지).
+// PHASE ATKB 독립 콘텐츠 모델(STEP6/7) — 도쿄/오사카는 TourAPI(places/지도) 데이터가 없어
+// 아래 places/지도 섹션은 항상 빈 상태로 뜨지만(기존 "표시할 장소가 없습니다" 처리로 안전하게
+// 커버됨), Knowledge 카드 섹션은 이 두 지역도 정상 노출한다 — TourAPI/placeId와 무관한 경로.
 const REGIONS = [
   { code: "KR-SEOUL-CITY", label: "서울" },
   { code: "KR-JEJU-JEJUSI", label: "제주시" },
   { code: "KR-JEJU-SEOGWIPO", label: "서귀포시" },
+  { code: "JP-TOKYO", label: "도쿄" },
+  { code: "JP-OSAKA", label: "오사카" },
 ] as const;
 
 const DEFAULT_REGION_CODE: (typeof REGIONS)[number]["code"] = "KR-SEOUL-CITY";
@@ -27,6 +33,15 @@ const SECTION_ORDER = [
   { contentTypeId: "12", label: "관광지" },
   { contentTypeId: "14", label: "문화시설" },
   { contentTypeId: "39", label: "음식점" },
+] as const;
+
+// course 외 5개 type — 섹션 제목만 다르고 카드 UX는 ConfirmedKnowledgeSection 하나로 공용.
+const KNOWLEDGE_SECTION_ORDER = [
+  { knowledgeType: "food", title: "검수된 맛집" },
+  { knowledgeType: "place", title: "검수된 여행지" },
+  { knowledgeType: "accommodation", title: "검수된 숙소" },
+  { knowledgeType: "shopping", title: "검수된 쇼핑" },
+  { knowledgeType: "experience", title: "검수된 체험" },
 ] as const;
 
 function resolveRegionCode(
@@ -79,9 +94,15 @@ export default async function PlacesPage({
   const tripDefaultRegion = REGIONS.find((r) => r.code === tripContext?.defaultRegionCode)?.code;
   const regionCode = resolveRegionCode(params.region, tripDefaultRegion);
   const activeRegion = REGIONS.find((r) => r.code === regionCode)!;
-  const [places, confirmedCourses] = await Promise.all([
+  const [places, confirmedCourses, knowledgeSections] = await Promise.all([
     getPlacesByRegion(regionCode),
     getConfirmedRegionalCourses(regionCode),
+    Promise.all(
+      KNOWLEDGE_SECTION_ORDER.map(async (section) => ({
+        title: section.title,
+        items: await getConfirmedRegionalKnowledgeByType(regionCode, section.knowledgeType),
+      }))
+    ),
   ]);
 
   const sections = SECTION_ORDER.map((section) => ({
@@ -147,6 +168,10 @@ export default async function PlacesPage({
       </div>
 
       <ConfirmedCourseSection courses={confirmedCourses} regionLabel={activeRegion.label} />
+
+      {knowledgeSections.map((section) => (
+        <ConfirmedKnowledgeSection key={section.title} items={section.items} title={section.title} />
+      ))}
 
       <div className="mb-10">
         <h2 className="mb-4 text-lg font-medium">지도</h2>
