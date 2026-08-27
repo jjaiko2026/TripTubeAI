@@ -6,9 +6,10 @@ import { ArrowLeft, Globe, MapPin, Phone, TriangleAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getPlaceById, getRecentItinerariesForUser } from "@/db/queries";
+import { getPlaceByIdIncludingKnowledgeDerived, getRecentItinerariesForUser } from "@/db/queries";
 import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
+import { GENERIC_CATEGORY_LABEL } from "@/lib/place-recommendation";
 import { getDetailFields } from "@/components/places/detail-field-labels";
 import { AddToItineraryDialog } from "@/components/places/add-to-itinerary-dialog";
 import { getPlacesTripContext } from "@/lib/places-trip-context";
@@ -23,7 +24,9 @@ export default async function PlaceDetailPage({
 }) {
   const { id } = await params;
   const { fromItinerary, day } = await searchParams;
-  const place = await getPlaceById(id);
+  // PHASE 13-2 STEP5 — TourAPI로 못 찾으면 Knowledge-derived Place로 재조회해, 추천에서
+  // 나온 Knowledge-derived Place id도 404 없이 열리게 한다(§getPlaceByIdIncludingKnowledgeDerived).
+  const place = await getPlaceByIdIncludingKnowledgeDerived(id);
   if (!place) notFound();
 
   // 일정 상세(/plan/result/[id])의 "장소 상세 페이지 보기"를 통해 들어온 경우, 뒤로가기가
@@ -39,7 +42,12 @@ export default async function PlaceDetailPage({
   if (day) currentSearch.set("day", day);
   const currentPath = `/places/${id}${currentSearch.toString() ? `?${currentSearch.toString()}` : ""}`;
 
-  const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
+  // PHASE 13-2 — TourAPI는 기존과 동일(externalContentTypeId 기반), Knowledge-derived는
+  // externalContentTypeId가 항상 null이라 place.category 실제 값으로 대체한다(§
+  // place-recommendation.ts의 동일한 provenance 구분 원칙).
+  const typeLabel = place.externalContentTypeId
+    ? CONTENT_TYPE_LABEL[place.externalContentTypeId]
+    : (GENERIC_CATEGORY_LABEL[place.category] ?? place.category);
   const detailFields = getDetailFields(place.externalContentTypeId, place.detailData);
 
   const { userId } = await auth();

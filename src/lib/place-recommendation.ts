@@ -6,6 +6,30 @@ import { PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
 
 /**
+ * PHASE 13-2 — TourAPI Place와 Knowledge-derived Place(§getKnowledgeDerivedPlacesByRegion,
+ * knowledge-queries.ts)를 candidates에서 명시적으로 병합하기 위한 provenance 태그(PHASE 13-1
+ * B안). 두 출처를 하나의 카탈로그로 섞지 않고, 항상 이 필드로 구분할 수 있게 유지한다.
+ */
+export type PlaceCandidateSource = "TOUR_API" | "KNOWLEDGE_DERIVED";
+
+export interface PlaceCandidate {
+  source: PlaceCandidateSource;
+  place: PlaceWithDetails;
+}
+
+// TourAPI의 CONTENT_TYPE_LABEL(externalContentTypeId 기반)과 별개로, Knowledge-derived
+// Place는 places.category(자유 텍스트, PHASE 12-16 INSERT 관례상 tourism/food/accommodation/
+// shopping/experience)의 실제 값을 쓴다 — externalContentTypeId로 역산하지 않는다(요구사항).
+// 매핑에 없는 값은 원본 category 문자열을 그대로 노출한다(추측 라벨을 지어내지 않음).
+export const GENERIC_CATEGORY_LABEL: Record<string, string> = {
+  tourism: "관광지",
+  food: "음식점",
+  accommodation: "숙소",
+  shopping: "쇼핑",
+  experience: "체험",
+};
+
+/**
  * AI TRAVEL RECOMMENDATION v1. 기존 itinerary.ts/trip-tips.ts와 동일한 AI SDK 패턴
  * (generateText + Output.object + zod 스키마)을 그대로 재사용한다 — 새 AI 시스템 없음.
  * 이 작업은 창작이 아니라 "주어진 목록 중에서 고르기"이므로, trip-tips.ts와 같은 이유로
@@ -29,33 +53,43 @@ const recommendationSchema = z.object({
 export interface PlaceRecommendation {
   place: PlaceWithDetails;
   reason: string;
+  /** PHASE 13-2 — 이 추천이 TourAPI/Knowledge-derived 중 어느 candidates에서 나왔는지. */
+  source: PlaceCandidateSource;
 }
 
 /**
- * candidates(현재 DB의 places 데이터, getPlacesByRegion() 반환값)로만 후보를 제한하고,
- * AI는 그 안에서 골라 이유를 설명할 뿐이다 — 장소 데이터를 새로 만들어내지 않는다.
- * AI가 후보 목록에 없는 placeId를 답하거나 같은 place를 중복 추천하면 그 항목은 결과에서
- * 제외한다(모델이 지시를 따르지 않을 가능성에 대비한 방어적 검증 — 프롬프트만 믿지 않음).
+ * candidates(TourAPI는 getPlacesByRegion(), Knowledge-derived는 getKnowledgeDerivedPlacesByRegion()
+ * 반환값을 호출부가 PlaceCandidate로 감싸 넘긴다, PHASE 13-2)로만 후보를 제한하고, AI는 그
+ * 안에서 골라 이유를 설명할 뿐이다 — 장소 데이터를 새로 만들어내지 않는다. AI가 후보 목록에
+ * 없는 placeId를 답하거나 같은 place를 중복 추천하면 그 항목은 결과에서 제외한다(모델이
+ * 지시를 따르지 않을 가능성에 대비한 방어적 검증 — 프롬프트만 믿지 않음).
  *
  * regionalKnowledge(Phase 8-2/8-3, getConfirmedRegionalKnowledge() 반환값)는 candidates를
- * 대체하지 않는 순수 참고정보다 — 추천 대상은 여전히 candidates 안에서만 고른다. 기본값이
- * 빈 배열이라 기존 호출부는 수정 없이 그대로 동작하고, 빈 배열이면 prompt에서 이 키 자체를
- * 생략해(undefined) Knowledge 연결 이전과 실질적으로 동일한 입력이 되도록 한다.
+ * 대체하지 않는 지역 전체 참고정보다 — 추천 대상은 여전히 candidates 안에서만 고른다. 반면
+ * Knowledge-derived candidate 개별의 근거(summary)는 c.place.overview에 이미 담겨 있어(§
+ * getKnowledgeDerivedPlacesByRegion) 아래 candidatePayload의 overview 필드가 place-specific
+ * Knowledge를 자연히 함께 전달한다 — region 전체 텍스트(regionalKnowledge)와 개별 장소
+ * 근거(candidatePayload[].overview)는 이렇게 별도 필드로 구분된 채 AI에 전달된다.
  */
 export async function recommendPlaces(
-  candidates: PlaceWithDetails[],
+  candidates: PlaceCandidate[],
   purposes: PurposeId[],
   notes: string,
   regionalKnowledge: RegionalKnowledgeItem[] = []
 ): Promise<PlaceRecommendation[]> {
   if (candidates.length === 0) return [];
 
-  const candidatePayload = candidates.map((p) => ({
-    id: p.id,
-    name: p.name,
-    category: p.externalContentTypeId ? (CONTENT_TYPE_LABEL[p.externalContentTypeId] ?? "기타") : "기타",
-    address: p.address ?? undefined,
-    overview: p.overview ? p.overview.slice(0, 150) : undefined,
+  const candidatePayload = candidates.map((c) => ({
+    id: c.place.id,
+    name: c.place.name,
+    category:
+      c.source === "TOUR_API"
+        ? c.place.externalContentTypeId
+          ? (CONTENT_TYPE_LABEL[c.place.externalContentTypeId] ?? "기타")
+          : "기타"
+        : (GENERIC_CATEGORY_LABEL[c.place.category] ?? c.place.category),
+    address: c.place.address ?? undefined,
+    overview: c.place.overview ? c.place.overview.slice(0, 150) : undefined,
   }));
 
   try {
@@ -81,15 +115,15 @@ export async function recommendPlaces(
       }),
     });
 
-    const byId = new Map(candidates.map((c) => [c.id, c]));
+    const byId = new Map(candidates.map((c) => [c.place.id, c]));
     const seen = new Set<string>();
     const results: PlaceRecommendation[] = [];
     for (const rec of output.recommendations) {
       if (seen.has(rec.placeId)) continue;
-      const place = byId.get(rec.placeId);
-      if (!place) continue; // 후보 목록 밖 id — AI가 지시를 어긴 경우, 무시(임의 장소 생성 금지 원칙)
+      const candidate = byId.get(rec.placeId);
+      if (!candidate) continue; // 후보 목록 밖 id — AI가 지시를 어긴 경우, 무시(임의 장소 생성 금지 원칙)
       seen.add(rec.placeId);
-      results.push({ place, reason: rec.reason });
+      results.push({ place: candidate.place, reason: rec.reason, source: candidate.source });
     }
     return results;
   } catch (error) {

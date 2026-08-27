@@ -21,7 +21,11 @@ import { consumeYoutubeQuota } from "@/db/rate-limit";
 import { generateTripTips } from "@/lib/trip-tips";
 import { buildSearchPlan, type SearchPlan } from "@/lib/search-plan";
 import { getPlacesByRegion, type PlaceWithDetails } from "@/db/queries";
-import { getConfirmedRegionalKnowledge, type RegionalKnowledgeItem } from "@/db/knowledge-queries";
+import {
+  getConfirmedRegionalKnowledge,
+  getKnowledgeDerivedPlacesByRegion,
+  type RegionalKnowledgeItem,
+} from "@/db/knowledge-queries";
 import { getDetailFields } from "@/components/places/detail-field-labels";
 
 const AI_MODEL = "anthropic/claude-sonnet-5";
@@ -50,6 +54,12 @@ const DESTINATION_TO_TOUR_API_REGIONS: Record<string, { code: string; label: str
     { code: "KR-JEJU-SEOGWIPO", label: "서귀포시" },
   ],
   서귀포: [{ code: "KR-JEJU-SEOGWIPO", label: "서귀포시" }],
+  // PHASE 13-3 — 도쿄/오사카는 TourAPI 데이터가 없어(§getPlacesByRegion 항상 빈 배열)
+  // Knowledge-derived candidates(도쿄 28/오사카 27)만으로 verifiedPlaces가 구성된다. 국내
+  // 3개 항목은 그대로 두고 이 두 항목만 추가한다 — mock/destinations.ts의 DestinationProfile
+  // name과 정확히 일치해야 한다(actions.ts REGION_DESTINATION_NAMES 주석 참고).
+  도쿄: [{ code: "JP-TOKYO", label: "도쿄" }],
+  오사카: [{ code: "JP-OSAKA", label: "오사카" }],
 };
 
 function resolveTourApiRegions(destinationName: string): { code: string; label: string }[] {
@@ -1001,8 +1011,21 @@ export async function generateItinerary(
   // knowledge에 어느 지역 소속인지 라벨을 붙여 넘긴다 — 1차로는 섬 전체 데이터를 다 보여주되,
   // 2차 시/군 구분은 라벨을 근거로 AI의 dayRegions 판단에 맡긴다.
   const tourApiRegions = resolveTourApiRegions(destination.name);
+  // PHASE 13-2 — 같은 region.code로 TourAPI(getPlacesByRegion)와 Knowledge-derived(§
+  // getKnowledgeDerivedPlacesByRegion) 후보를 함께 조회해 verifiedPlaces에 합친다(B안: provenance는
+  // 각 함수 반환값 자체가 유지하고, 여기서는 단순 병합만 한다). KnowledgeDerivedPlace가
+  // PlaceWithDetails를 그대로 extends하므로(overview에 Knowledge summary 포함) 아래
+  // generateItineraryWithAI/attachSourcesAndLocations/ensureMustIncludePlaces는 수정 없이도
+  // 두 출처를 구분 없이 동일하게 다룬다. tourApiRegions가 비어 있으면(대다수 목적지) 이전과
+  // 100% 동일하게 no-op이다.
   const verifiedPlaceGroups = await Promise.all(
-    tourApiRegions.map(async (region) => ({ label: region.label, places: await getPlacesByRegion(region.code) }))
+    tourApiRegions.map(async (region) => {
+      const [tourApiPlaces, knowledgePlaces] = await Promise.all([
+        getPlacesByRegion(region.code),
+        getKnowledgeDerivedPlacesByRegion(region.code),
+      ]);
+      return { label: region.label, places: [...tourApiPlaces, ...knowledgePlaces] };
+    })
   );
   const verifiedPlaces = verifiedPlaceGroups.flatMap((g) => g.places);
   const placeRegionLabelById = new Map(

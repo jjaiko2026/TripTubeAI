@@ -9,6 +9,7 @@ import {
   createReview,
   deleteItinerary,
   getPlaceById,
+  getRegionDomesticOverseas,
   removeItineraryItemByIndex,
   removePlaceFromItinerary,
   saveItinerary,
@@ -77,14 +78,19 @@ export async function createItineraryAction(formData: FormData) {
  * 달리 이 경로는 원래도 로그인 필수였다 — 그 동작을 그대로 유지).
  */
 // regionCode → generateItinerary()가 인식하는 destination 텍스트. itinerary.ts의
-// resolveTourApiRegions()는 정확히 "서울"/"제주도"/"서귀포" 3개 문자열만 키로 인식하므로
-// (PHASE 2 STEP 1 조사), 화면 표시용 라벨("제주시"/"서귀포시", 예: dashboard/page.tsx의
-// 별도 REGION_LABELS)을 그대로 destination에 넣으면 verifiedPlaces가 조용히 빈 배열이 된다.
-// 이 상수는 오직 그 매칭을 통과시키기 위한 것으로, 화면에는 노출되지 않는다.
+// resolveTourApiRegions()는 정확히 "서울"/"제주도"/"서귀포"/"도쿄"/"오사카" 문자열만 키로
+// 인식하므로(PHASE 2 STEP 1 조사, PHASE 13-3에서 도쿄/오사카 추가), 화면 표시용 라벨
+// ("제주시"/"서귀포시", 예: dashboard/page.tsx의 별도 REGION_LABELS)을 그대로 destination에
+// 넣으면 verifiedPlaces가 조용히 빈 배열이 된다. 이 상수는 오직 그 매칭을 통과시키기 위한
+// 것으로, 화면에는 노출되지 않는다. "도쿄"/"오사카"는 mock/destinations.ts에 이미 존재하는
+// DestinationProfile 이름 그대로다(findDestination() alias 매칭 확인됨) — genericDestination()
+// fallback 없이 정확히 그 프로필로 resolve된다.
 const REGION_DESTINATION_NAMES: Record<string, string> = {
   "KR-SEOUL-CITY": "서울",
   "KR-JEJU-JEJUSI": "제주도",
   "KR-JEJU-SEOGWIPO": "서귀포",
+  "JP-TOKYO": "도쿄",
+  "JP-OSAKA": "오사카",
 };
 
 export async function generateItineraryFromPlacesAction(formData: FormData) {
@@ -109,12 +115,18 @@ export async function generateItineraryFromPlacesAction(formData: FormData) {
   // 대조(존재 검증)는 generateItinerary() 내부(verifiedPlaces)에서 이뤄진다 — 여기서는
   // 문자열 그대로만 모은다.
   const selectedPlaceIds = formData.getAll("selectedPlaceIds").map(String).filter(Boolean);
+  // PHASE 13-6 — regionCode와 무관하게 항상 "국내"였던 하드코딩 제거. regions.domesticOverseas
+  // (단일 진실 소스)를 그대로 조회해 TripRequest.region에 싣는다 — destination 이름으로
+  // 추론하지 않고, findDestination()의 region도 재사용하지 않는다(그 필드는 지오코딩/지도
+  // 판단에 쓰지 않기로 이미 문서화되어 있음, mock/destinations.ts 참고). 이 값이 그대로
+  // Itinerary.region → resolveGeocodeProvider()/resolveMapProvider()까지 전달된다.
+  const region = await getRegionDomesticOverseas(regionCode);
 
   await logPipelineBEvent({ eventType: "plan_generate_requested", userId, regionCode });
 
   const request: TripRequest = {
     destination: destinationName,
-    region: "국내",
+    region,
     memberType,
     memberCount,
     nights,

@@ -9,12 +9,17 @@ import { ALL_PURPOSE_IDS, PURPOSE_LABELS } from "@/lib/purposes";
 import { ALL_MEMBER_TYPES } from "@/lib/types";
 import { buildPlacesQuery } from "@/lib/places-trip-context";
 
-// /places, /places/recommend와 동일한 3개 값(getPlacesByRegion()이 기대하는 regions.code).
-// 3줄뿐이라 완성된 다른 페이지들을 건드리지 않기 위해 여기서도 그대로 재정의한다.
+// /places, /places/recommend와 동일한 값(getPlacesByRegion()이 기대하는 regions.code).
+// 3줄뿐이라 완성된 다른 페이지들을 건드리지 않기 위해 여기서도 그대로 재정의한다. PHASE 13-3 —
+// recommend/page.tsx와 동일하게 JP-TOKYO/JP-OSAKA를 추가해, 그 지역에서 추천받은 장소로도
+// 이 페이지에서 바로 일정을 만들 수 있게 한다(§actions.ts REGION_DESTINATION_NAMES,
+// itinerary.ts DESTINATION_TO_TOUR_API_REGIONS와 함께 3곳을 맞춰야 실제로 동작한다).
 const REGIONS = [
   { code: "KR-SEOUL-CITY", label: "서울" },
   { code: "KR-JEJU-JEJUSI", label: "제주시" },
   { code: "KR-JEJU-SEOGWIPO", label: "서귀포시" },
+  { code: "JP-TOKYO", label: "도쿄" },
+  { code: "JP-OSAKA", label: "오사카" },
 ] as const;
 
 export default async function PlacesPlanPage({

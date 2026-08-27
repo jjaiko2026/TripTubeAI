@@ -219,12 +219,17 @@ export function validateCoordinate(
  * (§5.3) — lat/lng 원본값은 이 함수가 절대 수정하지 않는다(DB 미접근, 순수 함수).
  * lat/lng이 둘 다 결측인 경우는 warnings가 비어있으므로(§8.2 "정상, 경고 아님") true를
  * 반환한다 — "좌표가 없다"와 "좌표가 신뢰할 수 없다"는 다른 상태다.
+ *
+ * PHASE 13-6 — validateCoordinate()가 이미 갖고 있던 domestic 옵션을 그대로 통과시킨다(새
+ * 검증 로직 추가 아님). 옵션을 생략하면 validateCoordinate()의 기본값(domestic=true)이 그대로
+ * 적용되어 기존 모든 호출부(TourAPI 120건 등)는 이 변경 전과 100% 동일하게 판정된다.
  */
 export function isCoordinateReliable(
   latRaw: string | number | null | undefined,
-  lngRaw: string | number | null | undefined
+  lngRaw: string | number | null | undefined,
+  options: { domestic?: boolean } = {}
 ): boolean {
-  return validateCoordinate(latRaw, lngRaw).warnings.length === 0;
+  return validateCoordinate(latRaw, lngRaw, options).warnings.length === 0;
 }
 
 // ── 지역 매핑 검증 ───────────────────────────────────────────────────────

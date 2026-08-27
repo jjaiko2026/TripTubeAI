@@ -6,21 +6,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPlacesByRegion, getRecentItinerariesForUser } from "@/db/queries";
-import { getConfirmedRegionalKnowledge } from "@/db/knowledge-queries";
+import { getConfirmedRegionalKnowledge, getKnowledgeDerivedPlacesByRegion } from "@/db/knowledge-queries";
 import { logPipelineBEvent } from "@/db/pipeline-b-events";
-import { recommendPlaces } from "@/lib/place-recommendation";
+import { recommendPlaces, GENERIC_CATEGORY_LABEL, type PlaceCandidate } from "@/lib/place-recommendation";
 import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
 import { AddToItineraryDialog } from "@/components/places/add-to-itinerary-dialog";
 import { ALL_PURPOSE_IDS, PURPOSE_LABELS, isPurposeId, type PurposeId } from "@/lib/purposes";
 import { getPlacesTripContext, buildPlacesQuery, buildPlaceDetailQuery } from "@/lib/places-trip-context";
 
-// TourAPI 데이터가 실제로 존재하는 지역만 노출한다 — /places/page.tsx와 동일한 3개 값
-// (getPlacesByRegion()이 기대하는 regions.code). 공유 모듈로 뽑기엔 3줄뿐이라, 이미 완성된
-// /places/page.tsx를 건드리지 않기 위해 여기서도 그대로 재정의한다(불필요한 리팩터링 회피).
+// TourAPI 또는 Knowledge-derived Place 중 하나라도 데이터가 있는 지역을 노출한다. 기존 3개
+// (TourAPI, /places/page.tsx와 동일)에 더해 JP-TOKYO/JP-OSAKA를 추가한다(PHASE 13-2 STEP4) —
+// 이 두 지역은 TourAPI 후보가 0건이라도 Knowledge-derived candidates(도쿄 28/오사카 27)만으로
+// 추천을 구성할 수 있다(§아래 candidates 병합). /places/page.tsx는 이번 단계 범위 밖이라
+// 그대로 3개만 유지하고 건드리지 않는다(PHASE 13-2 STEP6).
 const REGIONS = [
   { code: "KR-SEOUL-CITY", label: "서울" },
   { code: "KR-JEJU-JEJUSI", label: "제주시" },
   { code: "KR-JEJU-SEOGWIPO", label: "서귀포시" },
+  { code: "JP-TOKYO", label: "도쿄" },
+  { code: "JP-OSAKA", label: "오사카" },
 ] as const;
 const DEFAULT_REGION_CODE: (typeof REGIONS)[number]["code"] = "KR-SEOUL-CITY";
 
@@ -90,13 +94,23 @@ export default async function RecommendPage({
     await logPipelineBEvent({ eventType: "recommend_executed", userId, regionCode });
   }
 
+  // PHASE 13-2 — TourAPI candidates(기존)와 Knowledge-derived candidates(신규, §
+  // getKnowledgeDerivedPlacesByRegion)를 provenance를 유지한 채 명시적으로 병합한다(B안).
+  // JP-TOKYO/JP-OSAKA처럼 TourAPI 후보가 0건인 지역도 Knowledge-derived candidates만으로
+  // recommendPlaces()가 정상 동작한다 — candidates.length===0일 때만 빈 배열을 반환하므로.
+  let candidates: PlaceCandidate[] = [];
+  if (hasSubmitted) {
+    const [tourApiPlaces, knowledgePlaces] = await Promise.all([
+      getPlacesByRegion(regionCode),
+      getKnowledgeDerivedPlacesByRegion(regionCode),
+    ]);
+    candidates = [
+      ...tourApiPlaces.map((place) => ({ source: "TOUR_API" as const, place })),
+      ...knowledgePlaces.map((place) => ({ source: "KNOWLEDGE_DERIVED" as const, place })),
+    ];
+  }
   const recommendations = hasSubmitted
-    ? await recommendPlaces(
-        await getPlacesByRegion(regionCode),
-        purposes,
-        notes,
-        await getConfirmedRegionalKnowledge(regionCode)
-      )
+    ? await recommendPlaces(candidates, purposes, notes, await getConfirmedRegionalKnowledge(regionCode))
     : [];
 
   return (
@@ -231,8 +245,16 @@ export default async function RecommendPage({
                 마음에 드는 장소를 체크하면, 그 장소를 우선 반영해 AI 일정을 만들 수 있어요.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
-                {recommendations.map(({ place, reason }) => {
-                  const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
+                {recommendations.map(({ place, reason, source }) => {
+                  // PHASE 13-2 — TOUR_API는 기존과 동일하게 externalContentTypeId 기반 라벨을
+                  // 쓰고, KNOWLEDGE_DERIVED는 places.category 실제 값을 라벨로 쓴다(§
+                  // place-recommendation.ts의 candidatePayload와 동일한 소스 구분 원칙).
+                  const typeLabel =
+                    source === "TOUR_API"
+                      ? place.externalContentTypeId
+                        ? CONTENT_TYPE_LABEL[place.externalContentTypeId]
+                        : undefined
+                      : (GENERIC_CATEGORY_LABEL[place.category] ?? place.category);
                   const alreadyInItinerary = tripContext?.existingPlaceIds.has(place.id) ?? false;
                   const detailQuery = buildPlaceDetailQuery({ itineraryId: params.itineraryId, day: params.day });
                   return (
