@@ -87,6 +87,8 @@ export async function getConfirmedRegionalKnowledge(regionCode: string): Promise
 
 // PHASE 12-1과 같은 상한 취지 — 지역당 노출되는 큐레이션 코스 수를 안전하게 제한한다.
 const MAX_CONFIRMED_COURSES = 10;
+// videoId 1건씩으로 접기 전에 넉넉히 가져와야 대표 선정 후에도 카드가 부족하지 않다.
+const CONFIRMED_COURSE_FETCH_LIMIT = 60;
 
 export interface ConfirmedCourseKnowledgeItem {
   id: string;
@@ -141,26 +143,34 @@ export async function getConfirmedRegionalCourses(regionCode: string): Promise<C
       )
     )
     .orderBy(asc(videoKnowledge.createdAt))
-    .limit(MAX_CONFIRMED_COURSES);
+    .limit(CONFIRMED_COURSE_FETCH_LIMIT);
 
-  return rows
-    .filter((row) => {
-      const content = row.content as KnowledgeContent | null;
-      return !!content?.summary?.trim();
-    })
-    .map((row) => ({
-      id: row.id,
-      knowledgeType: row.knowledgeType as KnowledgeTypeId,
-      summary: (row.content as KnowledgeContent).summary.trim(),
-      confidence: row.confidence as Confidence,
-      sourceReference: (row.sourceReference ?? "").trim(),
-      video: {
-        videoId: row.videoId,
-        title: row.title,
-        videoUrl: row.videoUrl,
-        thumbnailUrl: row.thumbnailUrl,
-      },
-    }));
+  const withSummary = rows.filter((row) => {
+    const content = row.content as KnowledgeContent | null;
+    return !!content?.summary?.trim();
+  });
+
+  // 같은 영상에서 나온 코스는 대표 1건만 — /places가 같은 썸네일로 도배되지 않게 한다.
+  const seenVideoIds = new Set<string>();
+  const oneCardPerVideo = withSummary.filter((row) => {
+    if (!row.videoId || seenVideoIds.has(row.videoId)) return false;
+    seenVideoIds.add(row.videoId);
+    return true;
+  });
+
+  return oneCardPerVideo.slice(0, MAX_CONFIRMED_COURSES).map((row) => ({
+    id: row.id,
+    knowledgeType: row.knowledgeType as KnowledgeTypeId,
+    summary: (row.content as KnowledgeContent).summary.trim(),
+    confidence: row.confidence as Confidence,
+    sourceReference: (row.sourceReference ?? "").trim(),
+    video: {
+      videoId: row.videoId,
+      title: row.title,
+      videoUrl: row.videoUrl,
+      thumbnailUrl: row.thumbnailUrl,
+    },
+  }));
 }
 
 // course 카드(getConfirmedRegionalCourses)와 필드는 겹치지만, PHASE 11-2에서 화면 표시 전용
@@ -301,7 +311,16 @@ export async function getConfirmedRegionalKnowledgeByType(
     return !acceptedQuotedNames.some((name) => rowText.includes(normalizeForCompare(name)));
   });
 
-  const finalRows = deduped.slice(0, MAX_CONFIRMED_KNOWLEDGE_ITEMS_BY_TYPE);
+  // 3차: 같은 영상에서 나온 카드는 대표 1건만 남긴다 — /places 섹션이 같은 유튜브 썸네일로
+  // 반복 도배되지 않게 하기 위한 조치. 정렬(confidence→createdAt)상 먼저 오는 행이 대표가 된다.
+  const seenVideoIds = new Set<string>();
+  const oneCardPerVideo = deduped.filter((row) => {
+    if (!row.videoId || seenVideoIds.has(row.videoId)) return false;
+    seenVideoIds.add(row.videoId);
+    return true;
+  });
+
+  const finalRows = oneCardPerVideo.slice(0, MAX_CONFIRMED_KNOWLEDGE_ITEMS_BY_TYPE);
   const courseVideoIds = finalRows.length > 0 ? await getConfirmedCourseVideoIds(regionCode) : new Set<string>();
 
   return finalRows.map((row) => {
