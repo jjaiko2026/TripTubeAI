@@ -1,4 +1,7 @@
+import dotenv from "dotenv";
 import http from "node:http";
+
+dotenv.config({ path: ".env.local" });
 
 // 최초 1회 로컬에서 실행해 GOOGLE_OAUTH_REFRESH_TOKEN을 발급받는 스크립트입니다.
 // 실행 전 .env.local에 GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET을 먼저 넣어두세요
