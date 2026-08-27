@@ -2,23 +2,18 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { auth } from "@clerk/nextjs/server";
 import { getPlacesByRegion } from "@/db/queries";
-import { getConfirmedRegionalCourses, getConfirmedRegionalKnowledgeByType } from "@/db/knowledge-queries";
+import { getKnowledgeDerivedPlacesByRegion } from "@/db/knowledge-queries";
 import { PlaceCard } from "@/components/places/place-card";
 import { PlacesMap } from "@/components/places/places-map";
-import { ConfirmedCourseSection } from "@/components/places/confirmed-course-section";
-import { ConfirmedKnowledgeSection } from "@/components/places/confirmed-knowledge-section";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getPlacesTripContext, buildPlacesQuery, buildPlaceDetailQuery } from "@/lib/places-trip-context";
 import { PURPOSE_LABELS } from "@/lib/purposes";
 
-// TourAPI 데이터가 실제로 존재하는 지역만 노출한다(PHASE 3-L-1, getPlacesByRegion()이
-// 기대하는 regions.code와 동일한 값). 잘못된/미지정 region 쿼리 파라미터는 서울로 폴백한다
-// (단, itineraryId가 있는데 그 여행지가 TourAPI 미지원 지역이면 서울로 폴백하지 않는다 —
-// 아래 unsupportedTrip 분기 참고, PHASE 2 STEP 3 감사에서 발견한 위험 방지).
-// PHASE ATKB 독립 콘텐츠 모델(STEP6/7) — 도쿄/오사카는 TourAPI(places/지도) 데이터가 없어
-// 아래 places/지도 섹션은 항상 빈 상태로 뜨지만(기존 "표시할 장소가 없습니다" 처리로 안전하게
-// 커버됨), Knowledge 카드 섹션은 이 두 지역도 정상 노출한다 — TourAPI/placeId와 무관한 경로.
+// 장소 목록은 TourAPI(getPlacesByRegion)와 검수된 Knowledge에서 실명이 확인된 장소
+// (getKnowledgeDerivedPlacesByRegion)를 합쳐 보여준다 — 도쿄/오사카는 TourAPI가 0건이라
+// Knowledge-derived 장소만으로 목록이 구성된다. 잘못된/미지정 region 파라미터는 서울로
+// 폴백하되, itineraryId의 여행지가 미지원 지역이면 폴백하지 않는다(아래 unsupportedTrip).
 const REGIONS = [
   { code: "KR-SEOUL-CITY", label: "서울" },
   { code: "KR-JEJU-JEJUSI", label: "제주시" },
@@ -29,20 +24,18 @@ const REGIONS = [
 
 const DEFAULT_REGION_CODE: (typeof REGIONS)[number]["code"] = "KR-SEOUL-CITY";
 
-const SECTION_ORDER = [
-  { contentTypeId: "12", label: "관광지" },
-  { contentTypeId: "14", label: "문화시설" },
-  { contentTypeId: "39", label: "음식점" },
+// TourAPI contentTypeId 또는 Knowledge-derived category를 사람이 읽는 3개 버킷으로 묶는다.
+const PLACE_BUCKETS = [
+  { key: "sight", label: "관광·명소" },
+  { key: "food", label: "맛집" },
+  { key: "etc", label: "체험·쇼핑·숙소" },
 ] as const;
 
-// course 외 5개 type — 섹션 제목만 다르고 카드 UX는 ConfirmedKnowledgeSection 하나로 공용.
-const KNOWLEDGE_SECTION_ORDER = [
-  { knowledgeType: "food", title: "검수된 맛집" },
-  { knowledgeType: "place", title: "검수된 여행지" },
-  { knowledgeType: "accommodation", title: "검수된 숙소" },
-  { knowledgeType: "shopping", title: "검수된 쇼핑" },
-  { knowledgeType: "experience", title: "검수된 체험" },
-] as const;
+function placeBucket(p: { externalContentTypeId: string | null; category: string }): (typeof PLACE_BUCKETS)[number]["key"] {
+  if (p.externalContentTypeId === "39" || p.category === "food") return "food";
+  if (p.externalContentTypeId === "12" || p.externalContentTypeId === "14" || p.category === "tourism") return "sight";
+  return "etc";
+}
 
 function resolveRegionCode(
   raw: string | undefined,
@@ -94,20 +87,16 @@ export default async function PlacesPage({
   const tripDefaultRegion = REGIONS.find((r) => r.code === tripContext?.defaultRegionCode)?.code;
   const regionCode = resolveRegionCode(params.region, tripDefaultRegion);
   const activeRegion = REGIONS.find((r) => r.code === regionCode)!;
-  const [places, confirmedCourses, knowledgeSections] = await Promise.all([
+  const [tourApiPlaces, knowledgePlaces] = await Promise.all([
     getPlacesByRegion(regionCode),
-    getConfirmedRegionalCourses(regionCode),
-    Promise.all(
-      KNOWLEDGE_SECTION_ORDER.map(async (section) => ({
-        title: section.title,
-        items: await getConfirmedRegionalKnowledgeByType(regionCode, section.knowledgeType),
-      }))
-    ),
+    getKnowledgeDerivedPlacesByRegion(regionCode),
   ]);
+  // TourAPI 장소를 먼저(주소/좌표가 있음), 그 뒤에 Knowledge-derived 장소를 붙인다.
+  const places = [...tourApiPlaces, ...knowledgePlaces];
 
-  const sections = SECTION_ORDER.map((section) => ({
-    ...section,
-    places: places.filter((p) => p.externalContentTypeId === section.contentTypeId),
+  const sections = PLACE_BUCKETS.map((bucket) => ({
+    ...bucket,
+    places: places.filter((p) => placeBucket(p) === bucket.key),
   })).filter((section) => section.places.length > 0);
 
   return (
@@ -115,7 +104,7 @@ export default async function PlacesPage({
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">장소 둘러보기</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{activeRegion.label}의 관광지·문화시설·음식점을 둘러보세요.</p>
+          <p className="mt-1 text-sm text-muted-foreground">{activeRegion.label}에서 가볼 만한 곳을 둘러보세요.</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -167,23 +156,19 @@ export default async function PlacesPage({
         ))}
       </div>
 
-      <ConfirmedCourseSection courses={confirmedCourses} regionLabel={activeRegion.label} />
-
-      {knowledgeSections.map((section) => (
-        <ConfirmedKnowledgeSection key={section.title} items={section.items} title={section.title} />
-      ))}
-
-      <div className="mb-10">
-        <h2 className="mb-4 text-lg font-medium">지도</h2>
-        <PlacesMap places={places} />
-      </div>
+      {places.length > 0 && (
+        <div className="mb-10">
+          <h2 className="mb-4 text-lg font-medium">지도</h2>
+          <PlacesMap places={places} />
+        </div>
+      )}
 
       {sections.length === 0 ? (
         <p className="text-center text-sm text-muted-foreground">표시할 장소가 없습니다.</p>
       ) : (
         <div className="flex flex-col gap-10">
           {sections.map((section) => (
-            <section key={section.contentTypeId}>
+            <section key={section.key}>
               <h2 className="mb-4 text-lg font-medium">
                 {section.label} <span className="text-sm font-normal text-muted-foreground">{section.places.length}곳</span>
               </h2>

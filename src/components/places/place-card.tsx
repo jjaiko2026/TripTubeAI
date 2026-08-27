@@ -14,6 +14,16 @@ export const CONTENT_TYPE_LABEL: Record<string, string> = {
   "32": "숙박",
 };
 
+// Knowledge-derived place는 externalContentTypeId가 null이라, places.category(자유 텍스트)로
+// 라벨을 만든다. 매핑에 없으면 라벨 없이 둔다(추측 라벨을 지어내지 않음).
+const GENERIC_CATEGORY_LABEL: Record<string, string> = {
+  tourism: "관광지",
+  food: "음식점",
+  accommodation: "숙소",
+  shopping: "쇼핑",
+  experience: "체험",
+};
+
 export function PlaceCard({
   place,
   alreadyInItinerary,
@@ -27,7 +37,9 @@ export function PlaceCard({
    *  쿼리스트링(§buildPlaceDetailQuery). 생략하면 기존처럼 쿼리 없이 이동한다. */
   linkQuery?: string;
 }) {
-  const typeLabel = place.externalContentTypeId ? CONTENT_TYPE_LABEL[place.externalContentTypeId] : undefined;
+  const typeLabel = place.externalContentTypeId
+    ? CONTENT_TYPE_LABEL[place.externalContentTypeId]
+    : GENERIC_CATEGORY_LABEL[place.category];
 
   return (
     <Card hover>
@@ -47,6 +59,9 @@ export function PlaceCard({
         </CardHeader>
       </Link>
       <CardContent className="flex flex-col gap-2">
+        {place.overview && (
+          <p className="line-clamp-2 text-xs text-muted-foreground">{place.overview}</p>
+        )}
         {alreadyInItinerary && (
           <p className="flex items-center gap-1 text-xs text-primary">
             <CalendarCheck className="h-3 w-3" />
