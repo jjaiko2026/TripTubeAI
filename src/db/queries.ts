@@ -158,6 +158,7 @@ export async function getReviews(): Promise<Review[]> {
     tripMonth: row.tripMonth,
     nights: row.nights,
     createdAt: row.createdAt.toISOString(),
+    itineraryId: row.itineraryId ?? null,
   }));
 }
 
@@ -170,6 +171,8 @@ export async function createReview(review: {
   content: string;
   tripMonth: number;
   nights: number;
+  /** 결과 페이지에서 작성된 경우 그 일정 id. 직접 작성/기존 후기는 생략(=null). */
+  itineraryId?: string | null;
 }) {
   const db = getDb();
   await db.insert(reviews).values(review);

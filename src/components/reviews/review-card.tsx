@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Star } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,9 +28,17 @@ export function ReviewCard({ review }: { review: Review }) {
       </CardHeader>
       <CardContent>
         <p className="text-sm leading-relaxed text-muted-foreground">{review.content}</p>
-        <Badge variant="secondary" className="mt-3">
-          {review.destination}
-        </Badge>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{review.destination}</Badge>
+          {review.itineraryId && (
+            <Link
+              href={`/plan/result/${review.itineraryId}`}
+              className="text-xs text-primary hover:underline"
+            >
+              이 후기의 일정 보기 →
+            </Link>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

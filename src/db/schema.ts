@@ -86,6 +86,10 @@ export const reviews = pgTable("reviews", {
   content: text("content").notNull(),
   tripMonth: integer("trip_month").notNull(),
   nights: integer("nights").notNull(),
+  // 이 후기가 어느 일정 결과(/plan/result/[id])에서 작성됐는지. 결과 페이지의 "후기 남기기"로
+  // 들어온 경우에만 채워지고, /reviews에서 직접 쓴 후기와 기존 후기는 null이다. 일정이 삭제/
+  // 재생성돼도 후기는 그대로 남아야 하므로 FK는 걸지 않는다(pipeline_b_events와 같은 원칙).
+  itineraryId: uuid("itinerary_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -15,15 +15,17 @@ export default async function PlanResultPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ fallback?: string }>;
+  searchParams: Promise<{ fallback?: string; revise?: string }>;
 }) {
   const { id } = await params;
   // PHASE 3 — generateItinerary()의 usedFallback은 saveItinerary()에 저장되지 않는 휘발성
   // 신호라(§lib/types.ts), 생성 직후의 리다이렉트 쿼리로만 전달된다. 새로고침/재방문 시에는
   // 이 파라미터가 없어 배너가 다시 뜨지 않는다 — 의도된 동작(영구 표시가 아니라 그 순간의
   // 재시도 유도용).
-  const { fallback } = await searchParams;
+  const { fallback, revise } = await searchParams;
   const showFallbackNotice = fallback === "1";
+  // PRD v3.0 §16 — 일정 수정(reviseItineraryDayAction) 직후의 1회성 결과 알림.
+  const reviseNotice = revise === "failed" ? "failed" : revise === "done" ? "done" : null;
   // 결과 페이지는 의도적으로 소유자 무관 공개 조회다(공유 링크 지원, src/db/queries.ts
   // getItinerary() 주석 참고) — 이 동작은 바꾸지 않는다. 일정 항목 삭제 UI를 보여줄지만
   // 별도로 소유자 일치 여부를 확인한다(같은 getItinerary()를 userId까지 넘겨 한 번 더 호출).
@@ -41,9 +43,13 @@ export default async function PlanResultPage({
     `${request.nights}박 ${request.nights + 1}일 여행 일정표`;
   // PHASE 1 — Pipeline B legacy 경로(장소 후보만으로 만든 일정)에는 실제로 분석하지 않은
   // YouTube/블로그 출처를 분석한 것처럼 표시하면 안 된다. 별도 컬럼 없이, 이미 저장된
-  // item.sources(§lib/types.ts ItineraryItem)만으로 판단한다.
+  // item.sources(§lib/types.ts ItineraryItem)만으로 판단한다. PRD v3.0 §13 — YouTube/블로그
+  // 출처가 없어도 관광공사·검수된 여행 지식(item.placeId)이 근거로 붙는 경우는 따로 구분한다.
   const hasAnySourcedItem = itinerary.days.some((day) =>
     day.items.some((item) => item.sources && item.sources.length > 0)
+  );
+  const hasReferencedPlace = itinerary.days.some((day) =>
+    day.items.some((item) => Boolean(item.placeId))
   );
 
   return (
@@ -81,6 +87,18 @@ export default async function PlanResultPage({
         </div>
       )}
 
+      {reviseNotice === "failed" && (
+        <div className="mb-6 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>일정을 수정하지 못했어요. 잠시 후 다시 시도해 주세요. 기존 일정은 그대로 유지됐어요.</p>
+        </div>
+      )}
+      {reviseNotice === "done" && (
+        <div className="mb-6 rounded-xl border bg-accent/40 px-4 py-3 text-sm">
+          <p>요청하신 날짜를 다시 구성했어요.</p>
+        </div>
+      )}
+
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           {itinerary.destinationName} 여행 일정이 완성됐어요
@@ -88,7 +106,9 @@ export default async function PlanResultPage({
         <p className="mt-1 text-muted-foreground">
           {hasAnySourcedItem
             ? "유튜브 영상과 블로그 글을 분석해 추천 코스를 구성했어요. 항목마다 참고한 출처도 함께 확인하세요."
-            : "AI가 선택한 장소 정보를 바탕으로 구성한 일정입니다."}
+            : hasReferencedPlace
+              ? "한국관광공사·검수된 여행 지식을 참고해 장소를 골랐어요. 항목마다 참고자료를 함께 확인하세요."
+              : "AI가 선택한 장소 정보를 바탕으로 구성한 일정입니다."}
         </p>
       </div>
 
@@ -103,6 +123,7 @@ export default async function PlanResultPage({
           renderAs={<Button />}
           defaultDestination={itinerary.destinationName}
           defaultNights={itinerary.request.nights}
+          itineraryId={id}
         >
           <Star className="h-4 w-4" /> 후기 남기기
         </WriteReviewDialog>

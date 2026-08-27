@@ -3,11 +3,12 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
-import { generateItinerary } from "@/lib/itinerary";
+import { generateItinerary, reviseItineraryDay } from "@/lib/itinerary";
 import {
   addPlaceToItinerary,
   createReview,
   deleteItinerary,
+  getItinerary,
   getPlaceById,
   getRegionDomesticOverseas,
   removeItineraryItemByIndex,
@@ -220,8 +221,46 @@ export async function removeItineraryItemAction(formData: FormData) {
   revalidatePath(`/plan/result/${itineraryId}`);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * PRD v3.0 §16 — 결과 페이지의 "일정 수정" 폼. 지정한 날짜 하나만 자연어 지시대로 재생성한다.
+ * (id, userId) 소유권을 확인하고(getItinerary + updateItinerary 이중), AI가 실패하면 원본을
+ * 건드리지 않고 ?revise=failed로 돌려보낸다. instruction은 저장하지 않는다(1회성).
+ */
+export async function reviseItineraryDayAction(formData: FormData) {
+  const { userId } = await auth();
+  if (!userId) return;
+
+  const itineraryId = String(formData.get("itineraryId") ?? "").trim();
+  const day = Number(formData.get("day") ?? NaN);
+  const instruction = String(formData.get("instruction") ?? "").trim();
+  if (!UUID_RE.test(itineraryId) || !Number.isFinite(day) || day < 1 || !instruction) return;
+
+  const itinerary = await getItinerary(itineraryId, userId);
+  if (!itinerary || !itinerary.days.some((d) => d.day === day)) return;
+
+  let failed = false;
+  try {
+    const revised = await reviseItineraryDay(itinerary, day, instruction);
+    const ok = await updateItinerary(itineraryId, userId, revised);
+    if (!ok) failed = true;
+  } catch (error) {
+    console.error("revise itinerary day failed:", error);
+    failed = true;
+  }
+
+  revalidatePath(`/plan/result/${itineraryId}`);
+  redirect(`/plan/result/${itineraryId}${failed ? "?revise=failed" : "?revise=done"}`);
+}
+
 export async function createReviewAction(formData: FormData) {
   const { userId } = await auth();
+
+  // 결과 페이지의 "후기 남기기"에서만 넘어오는 값. 형식이 uuid가 아니면(직접 작성/조작) 무시한다.
+  // FK를 걸지 않으므로 여기서 형식만 검증하고, 존재하지 않는 일정 id여도 후기 저장 자체는 막지 않는다.
+  const rawItineraryId = String(formData.get("itineraryId") ?? "").trim();
+  const itineraryId = UUID_RE.test(rawItineraryId) ? rawItineraryId : null;
 
   await createReview({
     userId: userId ?? null,
@@ -232,6 +271,7 @@ export async function createReviewAction(formData: FormData) {
     content: String(formData.get("content") || ""),
     tripMonth: new Date().getMonth() + 1,
     nights: Math.max(0, Number(formData.get("nights") || 1)),
+    itineraryId,
   });
 
   revalidatePath("/reviews");
