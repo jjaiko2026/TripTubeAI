@@ -273,6 +273,12 @@ export const videoKnowledge = pgTable(
     reviewer: text("reviewer"), // 검수자 식별자(이메일 등), 검수 전에는 null
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }), // 검수 시각, 검수 전에는 null
     reviewNote: text("review_note"), // Q8 — 다른 검수자가 재현 가능하도록 남기는 한 줄 근거
+    // STEP8/9 감사(ATKB 독립 콘텐츠 모델) — Q9: "이 Knowledge를 독립 콘텐츠 카드로 공개해도
+    // 되는가". status(사실성/검수 상태)와 완전히 별개의 축이라 별도 컬럼으로 둔다. null=미검토
+    // (기존 262건은 전부 이 상태로 유지), "yes"=공개 가능, "no"=공개 부적합. course/transport는
+    // 이 게이트의 대상이 아니지만(앱 레벨에서만 구분), DB 레벨에서 knowledgeType을 강제하지는
+    // 않는다 — 향후 확장 여지를 열어두되 현재는 앱 쿼리에서만 5개 type에 한해 사용한다.
+    publishable: text("publishable"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -302,6 +308,11 @@ export const videoKnowledge = pgTable(
     check(
       "video_knowledge_reviewed_status_requires_reviewer",
       sql`${table.status} = 'unverified' OR (${table.reviewer} IS NOT NULL AND ${table.reviewedAt} IS NOT NULL)`
+    ),
+    // Q9 — null(미검토)은 허용하되, 값이 있으면 "yes"/"no" 중 하나여야 한다.
+    check(
+      "video_knowledge_publishable_check",
+      sql`${table.publishable} IS NULL OR ${table.publishable} IN ('yes', 'no')`
     ),
   ]
 );
