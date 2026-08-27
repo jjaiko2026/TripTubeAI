@@ -29,7 +29,7 @@ import {
 import { getDetailFields } from "@/components/places/detail-field-labels";
 import { smartModel } from "@/lib/ai/model";
 
-// PRD v3.0 §20 — Vercel AI Gateway 직결 문자열 대신 provider 직결 모델 인스턴스를 쓴다.
+// PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts).
 const AI_MODEL = smartModel;
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 
@@ -200,9 +200,8 @@ function verifiedPlacePayload(
 }
 
 /**
- * Vercel AI Gateway로 Claude를 호출해 목적지 활동 후보를 참고한 일정 뼈대(시간/제목/
- * 설명/태그)를 짭니다. 실제 출처(영상/블로그) 매칭은 이후 단계에서 항목 제목 기준으로
- * 별도 검색해 붙입니다.
+ * AI(§lib/ai/model.ts)를 호출해 목적지 활동 후보를 참고한 일정 뼈대(시간/제목/설명/태그)를
+ * 짭니다. 실제 출처(영상/블로그) 매칭은 이후 단계에서 항목 제목 기준으로 별도 검색해 붙입니다.
  */
 async function generateItineraryWithAI(
   request: TripRequest,

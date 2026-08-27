@@ -344,12 +344,12 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 
 ## 20. AI Provider Strategy
 
-- AI 호출은 **provider abstraction**을 유지한다. 특정 유료 gateway에 종속되지 않는다.
-- 현재 구현은 AI SDK v7(`ai` 패키지) + `"provider/model"` 문자열. 모델: `anthropic/claude-sonnet-5`(일정 생성), `google/gemini-3.6-flash`(챗봇·장소 추천·여행 팁 — 창작이 아니라 요약/선택이라 저렴한 모델).
-- Vercel AI Gateway는 **필수 제품 구성요소가 아니다.** 현재 `AI_GATEWAY_API_KEY`를 쓰지만, 이는 교체 가능한 전달 계층으로 취급한다.
-- 제출용 MVP에서는 무료 사용 가능한 AI API 사용을 우선 검토한다. 단 "완전 무제한 무료"라고 표현하지 않으며, 실제 quota/조건은 구현 시점 공식 문서 기준으로 확인한다.
+- AI 호출은 **provider abstraction**을 유지한다. 특정 유료 중계 계층에 종속되지 않는다.
+- 구현: AI SDK v7(`ai` 패키지). 제공자 선택은 `src/lib/ai/model.ts` 한 곳에서만 하고, 호출부(`itinerary.ts`/`place-recommendation.ts`/`trip-tips.ts`/trip-chat route)는 `smartModel`(일정 생성·수정)·`fastModel`(챗봇·장소 추천·여행 팁)만 import한다.
+- 현재 제공자: **Google Gemini API 직결**(`@ai-sdk/google`, `GOOGLE_GENERATIVE_AI_API_KEY`). `"provider/model"` 문자열이 아니라 모델 인스턴스를 넘겨 별도 중계 계층 없이 제공자 API로 직접 호출한다. 두 티어 모두 `gemini-3.6-flash`(무료 티어).
+- 제출용 MVP에서는 무료 사용 가능한 AI API 사용을 우선한다. 단 "완전 무제한 무료"라고 표현하지 않으며, 실제 quota/조건은 구현 시점 공식 문서 기준으로 확인한다.
 - 로컬 LLM은 필수 구성이 아니다.
-- 이 PRD는 특정 모델명을 제품 요구사항으로 고정하지 않는다.
+- 이 PRD는 특정 모델명을 제품 요구사항으로 고정하지 않는다. 제공자 교체 = `src/lib/ai/model.ts` 수정.
 
 ## 21. MVP Scope (MUST HAVE)
 
@@ -404,8 +404,9 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 |---|---|---|
 | 랜딩 | `src/app/page.tsx` | ✅ CTA → `/plan/new` |
 | 요청 폼 | `src/components/plan/trip-form.tsx`, `trip-planner.tsx` | ✅ |
-| 챗봇 | `src/lib/trip-chat.ts`, `src/app/api/trip-chat/route.ts` | ✅ gemini-3.6-flash |
-| 일정 생성 (Pipeline A) | `src/lib/itinerary.ts` | ✅ claude-sonnet-5 + 자체랭킹 + fallback |
+| AI 제공자 | `src/lib/ai/model.ts` | ✅ Gemini API 직결 (`@ai-sdk/google`, `smartModel`/`fastModel`) |
+| 챗봇 | `src/lib/trip-chat.ts`, `src/app/api/trip-chat/route.ts` | ✅ `fastModel` |
+| 일정 생성 (Pipeline A) | `src/lib/itinerary.ts` | ✅ `smartModel` + 자체랭킹 + fallback |
 | 장소 후보/추천 (Pipeline B) | `src/lib/place-recommendation.ts`, `src/db/knowledge-queries.ts` | ✅ TourAPI + Knowledge 병합 |
 | 장소 브라우징 | `src/app/places/{page,recommend/page,plan/page,[id]/page}.tsx` | ✅ 5개 지역 |
 | A↔B 브릿지 | `itinerary.ts` `verifiedPlaces`/`regionalKnowledge`/`mustIncludePlaceIds` | ✅ PHASE 14 |
@@ -415,8 +416,8 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 | 외부 검색 | `src/lib/real/youtube.ts`, `naver-blog.ts` | ✅ + 캐시/락/RateLimit |
 | Knowledge 추출 | `src/lib/knowledge/extract.ts` (미커밋) | ✅ 스크립트 실행 완료 |
 | Knowledge 검수 | `src/lib/sheets/*`, `KNOWLEDGE_REVIEW` 시트 | ✅ Q1~Q9 |
-| 편집 | `src/lib/actions.ts` (add/remove/replace) | 🟡 자연어 재요청 없음 |
-| 후기 | `src/app/reviews/`, `createReviewAction` | 🟡 일정 미연결 |
+| 편집 | `src/lib/actions.ts` (add/remove/replace + `reviseItineraryDayAction`) | ✅ 자연어 날짜 재생성 포함 (§16) |
+| 후기 | `src/app/reviews/`, `createReviewAction` | ✅ `reviews.itinerary_id`로 일정 연결 (§18) |
 | 대시보드 | `src/app/dashboard/page.tsx` | ✅ 실데이터 + Pipeline B 패널 |
 | DB 스키마 | `src/db/schema.ts` (17 테이블: 코어 7 + ATKB 10) | ✅ |
 | 분석 로그 | `pipeline_b_events` | ✅ |
@@ -440,7 +441,7 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 - 과도한 데이터 정규화, 필요 이상의 API 최적화, 복잡한 관리자 기능
 - 1차 다국어 지원, 네이티브 앱
 - YouTube 웹 크롤링·비공식 API 우회, 영상 전체 다운로드·재배포
-- Vercel AI Gateway를 필수 구성요소로 고정하는 것
+- 특정 AI 중계 계층을 필수 구성요소로 고정하는 것
 - 제출 데모에 직접 영향을 주지 않는 모든 고도화
 
 ---
@@ -454,7 +455,7 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 | Knowledge | PRD에서 거의 안 다룸 | 축적된 여행 지식으로 명시, A의 판단 강화 (§9) |
 | Search 우선순위 | 캐시/Dedup/Queue 중심 | 국내/해외 소스 우선순위 사다리 명시 (§8) |
 | Pipeline A/B | 언급 없음 | 하나의 사용자 흐름으로 통합 (§4, §11) |
-| AI Provider | Gemini 3.6 Flash + Vercel AI Gateway 고정 | provider abstraction, gateway·모델 비고정 (§20) |
+| AI Provider | Gemini 3.6 Flash + Vercel AI Gateway 고정 | provider abstraction — Gemini API 직결(중계 계층 없음), 교체는 `src/lib/ai/model.ts` 한 곳 (§20) |
 | 참고자료 | YouTube 3 + 블로그 3 | 4개 유형에서 품질순 1~3개 (§13) |
 | 편집/후기/재사용 | 백로그 | MVP 흐름에 포함, 연결 과제 명시 (§16~§19) |
 | 문서 구조 | 검색 아키텍처 → 데이터 모델 순 | 제품 경험 → 엔진 → 데이터 → 범위 순 |

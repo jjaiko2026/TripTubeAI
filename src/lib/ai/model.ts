@@ -1,10 +1,10 @@
 import { google } from "@ai-sdk/google";
 
 /**
- * PRD v3.0 §20 — AI 호출은 특정 유료 gateway(Vercel AI Gateway)에 종속되지 않는다.
- * "provider/model" 문자열 대신 여기서 만든 모델 인스턴스를 generateText/streamText의
- * model에 넘기면 AI SDK가 gateway를 거치지 않고 해당 제공자로 직결한다. 제공자를 바꾸려면
- * 이 파일만 고치면 된다(호출부는 smartModel/fastModel만 import).
+ * PRD v3.0 §20 — AI 제공자 추상화. 호출부(itinerary.ts / place-recommendation.ts /
+ * trip-tips.ts / trip-chat route)는 smartModel/fastModel만 import하고, 실제 제공자는 여기서만
+ * 정한다. "provider/model" 문자열이 아니라 모델 인스턴스를 넘기므로 AI SDK가 별도 중계 계층
+ * 없이 해당 제공자 API로 직접 호출한다.
  *
  * 현재 제공자: Google Gemini API 직결(@ai-sdk/google). GOOGLE_GENERATIVE_AI_API_KEY 환경변수를
  * 요청 시점에 읽는다 — aistudio.google.com에서 무료 발급, 무료 티어 존재(실제 quota/조건은
@@ -12,10 +12,9 @@ import { google } from "@ai-sdk/google";
  * (generateItineraryFallback, trip-tips 결정론적 안내, recommendPlaces 빈 배열 등).
  */
 
-// gemini-3.6-flash: 이 API 키에서 사용 가능하고 무료 티어에 포함되는 현행 안정 모델
-// (기존 코드가 gateway로 쓰던 "google/gemini-3.6-flash"와 동일, 구조화 출력 검증됨).
-// 일정 생성 품질을 더 올리려면 smartModel을 "gemini-3.7-flash"나 "gemini-3.1-pro-preview"로
-// 바꾸면 된다 — 단 무료 티어/안정성은 구현 시점 공식 문서로 확인.
+// gemini-3.6-flash: 이 API 키에서 사용 가능하고 무료 티어에 포함되는 현행 안정 모델(구조화
+// 출력 검증됨). 일정 생성 품질을 더 올리려면 smartModel을 "gemini-3.7-flash"나
+// "gemini-3.1-pro-preview"로 바꾸면 된다 — 단 무료 티어/안정성은 구현 시점 공식 문서로 확인.
 
 /** 일정 생성·수정처럼 구조화된 멀티데이 JSON을 안정적으로 만들어야 하는 호출. */
 export const smartModel = google("gemini-3.6-flash");
