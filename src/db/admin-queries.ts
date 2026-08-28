@@ -1,4 +1,4 @@
-import { desc, inArray } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { itineraries, reviews } from "@/db/schema";
 import type { ItineraryDay } from "@/lib/types";
@@ -106,4 +106,39 @@ export async function getAdminItineraryRows(limit = 200): Promise<AdminItinerary
       review: latestReview.get(row.id) ?? null,
     };
   });
+}
+
+export interface AdminUserRow {
+  userId: string;
+  tripCount: number;
+  lastCreatedAt: string;
+  topDestination: string;
+}
+
+/**
+ * 로그인 사용자별 이용 요약 (Pipeline A — /plan 일정 생성 기준). Clerk 프로필은 조회하지
+ * 않고 userId만 노출한다(불필요한 개인정보 노출 방지). topDestination은 Postgres
+ * mode() within group으로 가장 자주 만든 목적지를 뽑는다.
+ */
+export async function getAdminUserRows(limit = 100): Promise<AdminUserRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      userId: itineraries.userId,
+      tripCount: sql<number>`count(*)`,
+      lastCreatedAt: sql<string>`max(${itineraries.createdAt})`,
+      topDestination: sql<string>`mode() within group (order by ${itineraries.destinationName})`,
+    })
+    .from(itineraries)
+    .where(sql`${itineraries.userId} is not null`)
+    .groupBy(itineraries.userId)
+    .orderBy(desc(sql`max(${itineraries.createdAt})`))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    userId: row.userId ?? "unknown",
+    tripCount: Number(row.tripCount),
+    lastCreatedAt: new Date(row.lastCreatedAt).toISOString(),
+    topDestination: row.topDestination,
+  }));
 }

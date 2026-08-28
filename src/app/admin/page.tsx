@@ -9,8 +9,8 @@ import { SheetsSyncPanel } from "@/components/dashboard/sheets-sync-panel";
 import { KnowledgeSheetsSyncPanel } from "@/components/dashboard/knowledge-sheets-sync-panel";
 import { getKnowledgeReviewProgress } from "@/db/knowledge-queries";
 import { getPipelineBUsageStats, PIPELINE_B_TEST_USER_IDS } from "@/db/pipeline-b-events";
-import { getAdminItineraryRows } from "@/db/admin-queries";
-import { formatNumber } from "@/lib/format";
+import { getAdminItineraryRows, getAdminUserRows } from "@/db/admin-queries";
+import { formatNumber, relativeTimeLabel } from "@/lib/format";
 import { isAdminUser } from "@/lib/admin";
 
 // /places, /places/recommend, /places/plan과 동일한 3개 값 — 지역별 집계 표 라벨용.
@@ -40,10 +40,11 @@ export default async function AdminPage({
   const { userId } = await auth();
   if (!isAdminUser(userId)) notFound();
 
-  const [pipelineB, knowledgeProgress, requestRows, params] = await Promise.all([
+  const [pipelineB, knowledgeProgress, requestRows, userRows, params] = await Promise.all([
     getPipelineBUsageStats(),
     getKnowledgeReviewProgress(),
     getAdminItineraryRows(200),
+    getAdminUserRows(100),
     searchParams,
   ]);
 
@@ -159,6 +160,52 @@ export default async function AdminPage({
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 사용자별 이용 현황 (Pipeline A — /plan 일정 생성 기준) */}
+      <Card className="mb-8">
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>사용자별 이용 현황</CardTitle>
+            <Badge variant="secondary">{userRows.length}명</Badge>
+          </div>
+          <CardDescription>
+            로그인 사용자별로 일정을 몇 개 만들었는지, 어디를 가장 자주 계획했는지 집계했어요. 개인정보 노출을
+            막기 위해 Clerk 프로필은 조회하지 않고 user id만 표시합니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {userRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">아직 로그인 사용자의 일정이 없어요.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="whitespace-nowrap pb-2 pr-4 font-medium">사용자</th>
+                    <th className="whitespace-nowrap pb-2 pr-4 font-medium">일정 생성</th>
+                    <th className="whitespace-nowrap pb-2 pr-4 font-medium">가장 자주 계획한 곳</th>
+                    <th className="whitespace-nowrap pb-2 font-medium">최근 생성</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userRows.map((u) => (
+                    <tr key={u.userId} className="border-b last:border-0">
+                      <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs" title={u.userId}>
+                        …{u.userId.slice(-6)}
+                      </td>
+                      <td className="whitespace-nowrap py-2 pr-4">{formatNumber(u.tripCount)}건</td>
+                      <td className="py-2 pr-4">{u.topDestination}</td>
+                      <td className="whitespace-nowrap py-2 text-muted-foreground">
+                        {relativeTimeLabel(u.lastCreatedAt)}
                       </td>
                     </tr>
                   ))}
