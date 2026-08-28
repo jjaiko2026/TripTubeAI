@@ -5,6 +5,7 @@ import type { Itinerary, ItineraryDay, ItineraryItem, Region, Review, TripTips }
 import { normalizeTripPurposes, PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
 import { getHomepageDisplayStatus, isCoordinateReliable, type HomepageDisplay } from "@/lib/tour-api/quality";
 import { getKnowledgeDerivedPlaceById } from "@/db/knowledge-queries";
+import { findDestination } from "@/lib/mock/destinations";
 
 const EMPTY_TRIP_TIPS: TripTips = { climate: "", packingList: [], recentIssues: [] };
 
@@ -171,6 +172,8 @@ export async function createReview(review: {
   content: string;
   tripMonth: number;
   nights: number;
+  /** 여행자가 남긴 1인 총 경비(KRW). 선택 입력이라 없으면 생략(=null). */
+  totalCost?: number | null;
   /** 결과 페이지에서 작성된 경우 그 일정 id. 직접 작성/기존 후기는 생략(=null). */
   itineraryId?: string | null;
 }) {
@@ -183,18 +186,26 @@ export interface DashboardData {
   dailyGenerated: { date: string; count: number }[];
   topDestinations: { destination: string; count: number }[];
   purposeDistribution: { name: string; value: number }[];
+  /** 후기에 1인 총 경비를 남긴 여행지별 집계. avgPerNight = mean(totalCost / nights).
+   *  destination은 findDestination()으로 정규화한 이름(예: "제주" → "제주도"). */
+  reviewCostByDestination: { destination: string; avgPerNight: number; sampleCount: number }[];
 }
 
 /** 대시보드용 실제 집계. 표본이 아직 작은 초기 단계라 DB에서 집계 없이 통째로 읽어 JS에서 계산합니다. */
 export async function getDashboardData(days = 30): Promise<DashboardData> {
   const db = getDb();
-  const rows = await db
-    .select({
-      destinationName: itineraries.destinationName,
-      purposes: itineraries.purposes,
-      createdAt: itineraries.createdAt,
-    })
-    .from(itineraries);
+  const [rows, reviewRows] = await Promise.all([
+    db
+      .select({
+        destinationName: itineraries.destinationName,
+        purposes: itineraries.purposes,
+        createdAt: itineraries.createdAt,
+      })
+      .from(itineraries),
+    db
+      .select({ destination: reviews.destination, nights: reviews.nights, totalCost: reviews.totalCost })
+      .from(reviews),
+  ]);
 
   // row.createdAt.toISOString()의 날짜(UTC 기준)와 맞춰야 하므로, 버킷 날짜도
   // 서버 로컬 타임존이 아닌 UTC 자정 기준으로 계산합니다.
@@ -208,6 +219,18 @@ export async function getDashboardData(days = 30): Promise<DashboardData> {
 
   const destinationCounts = new Map<string, number>();
   const purposeCounts = new Map<PurposeId, number>();
+
+  // 후기에 1인 총 경비를 남긴 것만 골라 여행지별로 (경비 ÷ 박수)의 평균을 낸다.
+  // 자유 입력 여행지명은 findDestination()으로 정규화해 "제주"·"제주도"를 한 그룹으로 묶는다.
+  const costAcc = new Map<string, { sum: number; count: number }>();
+  for (const r of reviewRows) {
+    if (r.totalCost == null || r.totalCost <= 0 || r.nights <= 0) continue;
+    const name = findDestination(r.destination)?.name ?? r.destination;
+    const acc = costAcc.get(name) ?? { sum: 0, count: 0 };
+    acc.sum += r.totalCost / r.nights;
+    acc.count += 1;
+    costAcc.set(name, acc);
+  }
 
   for (const row of rows) {
     const dayKey = row.createdAt.toISOString().slice(0, 10);
@@ -229,6 +252,11 @@ export async function getDashboardData(days = 30): Promise<DashboardData> {
     purposeDistribution: Array.from(purposeCounts.entries())
       .map(([id, value]) => ({ name: PURPOSE_LABELS[id], value }))
       .sort((a, b) => b.value - a.value),
+    reviewCostByDestination: Array.from(costAcc.entries()).map(([destination, { sum, count }]) => ({
+      destination,
+      avgPerNight: sum / count,
+      sampleCount: count,
+    })),
   };
 }
 

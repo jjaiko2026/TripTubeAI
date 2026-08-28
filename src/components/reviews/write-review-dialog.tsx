@@ -106,6 +106,13 @@ export function WriteReviewDialog({
                 />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="totalCost">1인 총 경비 (원, 선택)</Label>
+              <Input id="totalCost" name="totalCost" type="number" min={0} step={10000} placeholder="예: 600000" />
+              <p className="text-xs text-muted-foreground">
+                입력하면 대시보드의 여행지별 평균 비용에 반영됩니다.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button type="submit">등록하기</Button>

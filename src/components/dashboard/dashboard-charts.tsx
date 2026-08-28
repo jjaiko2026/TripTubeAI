@@ -50,11 +50,15 @@ export function GenerationTrendChart({ data }: { data: { date: string; count: nu
   );
 }
 
-export function DestinationCostChart({ data }: { data: DestinationCost[] }) {
+export function DestinationCostChart({
+  data,
+}: {
+  data: (DestinationCost & { fromReviews?: boolean })[];
+}) {
   const chartData = [...data]
     .sort((a, b) => b.avgCostPerPersonPerNight - a.avgCostPerPersonPerNight)
     .slice(0, 8)
-    .map((d) => ({ name: d.destination, cost: d.avgCostPerPersonPerNight }));
+    .map((d) => ({ name: d.destination, cost: d.avgCostPerPersonPerNight, fromReviews: !!d.fromReviews }));
 
   return (
     <ResponsiveContainer width="100%" height={280}>
@@ -69,7 +73,10 @@ export function DestinationCostChart({ data }: { data: DestinationCost[] }) {
         />
         <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={56} />
         <Tooltip
-          formatter={(value) => [formatKRW(Number(value)), "1인 1박 평균"]}
+          formatter={(value, _name, entry) => [
+            formatKRW(Number(value)),
+            entry?.payload?.fromReviews ? "후기 평균" : "추정치",
+          ]}
           contentStyle={{
             fontSize: 12,
             borderRadius: 8,
@@ -78,7 +85,11 @@ export function DestinationCostChart({ data }: { data: DestinationCost[] }) {
             color: "var(--popover-foreground)",
           }}
         />
-        <Bar dataKey="cost" radius={[0, 6, 6, 0]} fill={PALETTE[0]} />
+        <Bar dataKey="cost" radius={[0, 6, 6, 0]}>
+          {chartData.map((d) => (
+            <Cell key={d.name} fill={d.fromReviews ? PALETTE[0] : PALETTE[2]} />
+          ))}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
