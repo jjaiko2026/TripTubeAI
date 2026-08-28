@@ -1,7 +1,7 @@
 import { check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
-import type { Source, TripTips } from "@/lib/types";
+import type { NearbyPlacesResult, Source, TripTips } from "@/lib/types";
 import type { TripPurpose } from "@/lib/purposes";
 import type { ContentTypeId, KnowledgeContent } from "@/lib/knowledge/types";
 
@@ -47,6 +47,15 @@ export const sourceCache = pgTable("source_cache", {
 export const tripTipsCache = pgTable("trip_tips_cache", {
   key: text("key").primaryKey(),
   tips: jsonb("tips").$type<TripTips>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// 목적지+지역+목적 단위로 "이 지역 더 둘러보기"(결과 페이지 하단) AI 제안을 캐싱합니다.
+// places 카탈로그(국내 TourAPI 한정)에 의존하지 않고 일정 생성과 같은 방식으로 만들어,
+// 임의 목적지(베트남·대만·유럽 등)도 커버합니다 (src/lib/nearby-places.ts).
+export const nearbyPlacesCache = pgTable("nearby_places_cache", {
+  key: text("key").primaryKey(),
+  result: jsonb("result").$type<NearbyPlacesResult>().notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -101,6 +101,13 @@ async function generatePdfBlob(targetId: string, titleText: string): Promise<Blo
     import("jspdf"),
   ]);
 
+  // 일차 카드가 접혀 있으면(itinerary-days-list.tsx의 <details>) 그 내용이 캡처에서 빠지므로,
+  // 캡처 동안만 모두 펼쳤다가 원래 상태로 되돌린다.
+  const collapsedDetails = Array.from(
+    container.querySelectorAll<HTMLDetailsElement>("[data-pdf-day] details:not([open])")
+  );
+  collapsedDetails.forEach((d) => (d.open = true));
+
   const titleEl = createOffscreenTitleElement(titleText);
   document.body.appendChild(titleEl);
 
@@ -123,6 +130,7 @@ async function generatePdfBlob(targetId: string, titleText: string): Promise<Blo
     return pdf.output("blob");
   } finally {
     titleEl.remove();
+    collapsedDetails.forEach((d) => (d.open = false));
   }
 }
 

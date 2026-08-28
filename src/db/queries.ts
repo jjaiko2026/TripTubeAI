@@ -454,6 +454,45 @@ export async function addPlaceToItinerary(
 }
 
 /**
+ * "이 지역 더 둘러보기"(src/lib/nearby-places.ts)에서 고른 AI 제안 장소를 일정에 넣는다.
+ * addPlaceToItinerary()와 동일한 (id, userId) 소유자 확인 + 날짜 append 로직이지만, placeId가
+ * 없는 항목이라 별도 함수로 둔다(그 함수는 무수정). 제거는 removeItineraryItemByIndex()가
+ * placeId 없는 항목도 인덱스로 지울 수 있어 그대로 재사용된다.
+ */
+export async function addAiItemToItinerary(
+  itineraryId: string,
+  userId: string,
+  day: number,
+  item: { title: string; description: string }
+): Promise<boolean> {
+  const db = getDb();
+  const [row] = await db
+    .select({ days: itineraries.days })
+    .from(itineraries)
+    .where(and(eq(itineraries.id, itineraryId), eq(itineraries.userId, userId)))
+    .limit(1);
+  if (!row) return false;
+
+  const days = (row.days as ItineraryDay[] | null) ?? [];
+  const newItem: ItineraryItem = {
+    time: "",
+    title: item.title,
+    description: item.description,
+    tags: [],
+    sources: [],
+    location: null,
+  };
+
+  const hasTargetDay = days.some((d) => d.day === day);
+  const nextDays: ItineraryDay[] = hasTargetDay
+    ? days.map((d) => (d.day === day ? { ...d, items: [...d.items, newItem] } : d))
+    : [...days, { day, label: `${day}일차`, items: [newItem] }].sort((a, b) => a.day - b.day);
+
+  await db.update(itineraries).set({ days: nextDays }).where(eq(itineraries.id, itineraryId));
+  return true;
+}
+
+/**
  * addPlaceToItinerary()로 추가된 TourAPI 장소 항목을 일정에서 제거한다
  * (ITINERARY PLACE MANAGEMENT v1). placeId 기준으로 식별한다 — 일반 인덱스가 아니라
  * placeId로 지운다. 같은 날에 같은 place가 중복 추가된 경우 전부 제거된다(v1 범위 밖,
