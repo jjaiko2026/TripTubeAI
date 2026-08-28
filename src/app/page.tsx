@@ -9,7 +9,7 @@ import {
   Link2,
   ArrowRight,
   Sparkles,
-  Users,
+  CalendarRange,
   Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,9 @@ import { ReviewCard } from "@/components/reviews/review-card";
 import { HeroVideoBackground } from "@/components/hero-video-background";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { getReviews } from "@/db/queries";
-import { DESTINATION_COSTS, generateUsageStats, totalUsage } from "@/lib/mock/stats";
+import { DESTINATION_COSTS } from "@/lib/mock/stats";
 import { getHotDestinationVideo } from "@/lib/mock/hero";
+import { getDashboardData } from "@/db/queries";
 import { formatKRW, formatNumber } from "@/lib/format";
 
 const PROBLEMS = [
@@ -49,9 +50,8 @@ const STEPS = [
 ];
 
 export default async function Home() {
-  const reviews = await getReviews();
-  const usage = generateUsageStats(30);
-  const totals = totalUsage(usage);
+  const [reviews, dashboard] = await Promise.all([getReviews(), getDashboardData(30)]);
+  const last30dGenerated = dashboard.dailyGenerated.reduce((sum, d) => sum + d.count, 0);
   const topCosts = [...DESTINATION_COSTS].sort((a, b) => b.popularity - a.popularity).slice(0, 4);
   const hotDestination = getHotDestinationVideo();
 
@@ -204,16 +204,16 @@ export default async function Home() {
         <div className="mt-8 grid gap-4 sm:grid-cols-3">
           <Card hover>
             <CardContent className="pt-6">
-              <Users className="h-4 w-4 text-primary" />
-              <p className="mt-2 text-2xl font-semibold">{formatNumber(totals.visits)}</p>
-              <p className="text-sm text-muted-foreground">최근 30일 방문자</p>
+              <CalendarRange className="h-4 w-4 text-primary" />
+              <p className="mt-2 text-2xl font-semibold">{formatNumber(last30dGenerated)}</p>
+              <p className="text-sm text-muted-foreground">최근 30일 생성된 일정</p>
             </CardContent>
           </Card>
           <Card hover>
             <CardContent className="pt-6">
               <Sparkles className="h-4 w-4 text-primary" />
-              <p className="mt-2 text-2xl font-semibold">{formatNumber(totals.itinerariesGenerated)}</p>
-              <p className="text-sm text-muted-foreground">생성된 여행 일정</p>
+              <p className="mt-2 text-2xl font-semibold">{formatNumber(dashboard.totalItineraries)}</p>
+              <p className="text-sm text-muted-foreground">누적 생성된 여행 일정</p>
             </CardContent>
           </Card>
           <Card hover>

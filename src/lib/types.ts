@@ -126,12 +126,6 @@ export interface DestinationCost {
   popularity: number;
 }
 
-export interface UsageStatPoint {
-  date: string;
-  visits: number;
-  itinerariesGenerated: number;
-}
-
 /** "이 지역 더 둘러보기" — places 카탈로그가 아니라 일정과 같은 방식(AI)으로 생성한다.
  *  분류는 여행 목적(PURPOSE_LABELS)과 동일한 taxonomy를 그대로 쓴다. */
 export const NEARBY_PLACE_CATEGORIES = [

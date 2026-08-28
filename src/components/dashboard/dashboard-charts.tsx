@@ -15,26 +15,18 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import type { DestinationCost, UsageStatPoint } from "@/lib/types";
+import type { DestinationCost } from "@/lib/types";
 import { formatKRW, formatNumber } from "@/lib/format";
 
 const PALETTE = ["#0d9488", "#6366f1", "#f59e0b", "#e11d48", "#a855f7", "#0891b2"];
 
-export function VisitsChart({ data }: { data: UsageStatPoint[] }) {
-  const chartData = data.slice(-30).map((d) => ({
-    date: d.date.slice(5),
-    방문자: d.visits,
-    일정생성: d.itinerariesGenerated,
-  }));
+export function GenerationTrendChart({ data }: { data: { date: string; count: number }[] }) {
+  const chartData = data.slice(-30).map((d) => ({ date: d.date.slice(5), 일정생성: d.count }));
 
   return (
     <ResponsiveContainer width="100%" height={280}>
       <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
         <defs>
-          <linearGradient id="visitsFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={PALETTE[0]} stopOpacity={0.35} />
-            <stop offset="95%" stopColor={PALETTE[0]} stopOpacity={0} />
-          </linearGradient>
           <linearGradient id="genFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={PALETTE[1]} stopOpacity={0.35} />
             <stop offset="95%" stopColor={PALETTE[1]} stopOpacity={0} />
@@ -42,7 +34,7 @@ export function VisitsChart({ data }: { data: UsageStatPoint[] }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
         <XAxis dataKey="date" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={40} />
+        <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} width={40} allowDecimals={false} />
         <Tooltip
           contentStyle={{
             fontSize: 12,
@@ -52,8 +44,6 @@ export function VisitsChart({ data }: { data: UsageStatPoint[] }) {
             color: "var(--popover-foreground)",
           }}
         />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Area type="monotone" dataKey="방문자" stroke={PALETTE[0]} fill="url(#visitsFill)" strokeWidth={2} />
         <Area type="monotone" dataKey="일정생성" stroke={PALETTE[1]} fill="url(#genFill)" strokeWidth={2} />
       </AreaChart>
     </ResponsiveContainer>
