@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { NEARBY_PLACE_CATEGORIES, type NearbyPlacesResult, type Region } from "@/lib/types";
+import { NEARBY_PLACE_CATEGORIES, type NearbyPlace, type NearbyPlacesResult, type Region } from "@/lib/types";
 import { PURPOSE_LABELS, type TripPurpose } from "@/lib/purposes";
 import {
   getCachedNearbyPlaces,
@@ -23,12 +23,50 @@ const nearbyPlacesSchema = z.object({
           .string()
           .nullable()
           .describe("대략적인 동네/구역/지구 이름. 모르면 null."),
+        relevance: z
+          .enum(["high", "medium", "low"])
+          .describe(
+            "그 여행지의 대표성 + 여행 목적 부합도. high=그 지역 하면 떠오르는 대표 장소이고 목적에 정확히 " +
+              "부합. medium=가볼 만하지만 대표성/목적 부합이 보통. low=느슨하게만 관련됨(가급적 넣지 말 것)."
+          ),
       })
     )
     .min(1)
-    .max(18)
-    .describe("그 지역의 널리 알려진 실재하는 장소들. 유형이 골고루 섞이게."),
+    .max(20)
+    .describe("그 지역의 널리 알려진 실재하는 장소들. 대표성·목적 부합도가 높은 순으로 정렬."),
 });
+
+// 교통 시설(공항·터미널·부두 등)과 숙박은 이 추천에서 제외한다 — '둘러보는' 대상이 아니고,
+// 숙박은 차후 제휴(트립닷컴 등)로 별도 연결할 영역이다. 프롬프트 지시에 더해 이름/이유에
+// 이 키워드가 있으면 코드에서도 한 번 더 걸러낸다(안전망).
+const EXCLUDE_KEYWORDS = [
+  "공항",
+  "터미널",
+  "선착장",
+  "여객선",
+  "여객터미널",
+  "부두",
+  "휴게소",
+  "호텔",
+  "리조트",
+  "펜션",
+  "게스트하우스",
+  "게스트 하우스",
+  "모텔",
+  "호스텔",
+  "레지던스",
+];
+
+function isExcluded(place: NearbyPlace): boolean {
+  const hay = `${place.name} ${place.reason}`;
+  return EXCLUDE_KEYWORDS.some((kw) => hay.includes(kw));
+}
+
+const RELEVANCE_RANK: Record<NonNullable<NearbyPlace["relevance"]>, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
 
 /** 목적 우선순위(core/important)를 담아 캐시 키를 안정화한다. */
 function purposesKey(purposes: TripPurpose[]): string {
@@ -53,7 +91,8 @@ export async function generateNearbyPlaces(
   region: Region,
   purposes: TripPurpose[]
 ): Promise<NearbyPlacesResult> {
-  const key = nearbyPlacesCacheKey(destinationName, region, purposesKey(purposes));
+  // 프롬프트·스키마가 바뀌었으므로 키에 버전(v2)을 붙여 이전 캐시를 무효화한다.
+  const key = nearbyPlacesCacheKey(destinationName, region, `${purposesKey(purposes)}::v2`);
   const cached = await getCachedNearbyPlaces(key).catch((error) => {
     console.error("nearby places cache read failed:", error);
     return null;
@@ -66,10 +105,14 @@ export async function generateNearbyPlaces(
       output: Output.object({ schema: nearbyPlacesSchema }),
       system:
         "당신은 TripTube AI의 여행 장소 추천 도우미입니다. 주어진 여행지에서 여행자가 " +
-        "가볼 만한, 실재하고 널리 알려진 장소를 유형별로 12~18곳 제안합니다. " +
+        "가볼 만한, 실재하고 널리 알려진 장소를 12~18곳 제안합니다. " +
         "확실하지 않거나 실재를 자신할 수 없는 장소는 절대 지어내지 말고 빼세요 — 목록이 " +
-        "짧아지는 편이 틀린 장소를 넣는 것보다 낫습니다. 특정 지점(호텔·프랜차이즈 지점 등)이 " +
-        "아니라 여행자가 목적지로 삼을 만한 곳 위주로, 여행 목적에 맞는 곳을 우선하세요.",
+        "짧아지는 편이 틀린 장소를 넣는 것보다 낫습니다.\n" +
+        "다음은 절대 포함하지 마세요: (1) 공항·항만·여객선터미널·기차역·버스터미널·고속도로 휴게소 등 " +
+        "이동/교통 시설 — 여행자가 '둘러보는' 곳이 아니라 거쳐 가는 곳입니다. (2) 호텔·리조트·펜션·" +
+        "게스트하우스 등 숙박시설 — 숙박은 별도로 다룹니다. (3) 프랜차이즈 지점.\n" +
+        "여행 목적에 맞는 곳을 우선하고, 억지로 유형을 골고루 채우지 마세요. 목록은 그 여행지의 " +
+        "대표성과 목적 부합도가 높은 순으로 정렬하고, 각 항목에 relevance를 정직하게 매기세요.",
       prompt: JSON.stringify({
         destination: destinationName,
         region,
@@ -77,10 +120,17 @@ export async function generateNearbyPlaces(
       }),
     });
 
-    await saveCachedNearbyPlaces(key, output).catch((error) =>
+    // 안전망: 교통/숙박 키워드가 걸리는 항목 제거 → low relevance 제거 → 정확도(high>medium) 순 정렬.
+    const cleaned: NearbyPlacesResult = {
+      places: output.places
+        .filter((p) => !isExcluded(p) && p.relevance !== "low")
+        .sort((a, b) => RELEVANCE_RANK[a.relevance ?? "medium"] - RELEVANCE_RANK[b.relevance ?? "medium"]),
+    };
+
+    await saveCachedNearbyPlaces(key, cleaned).catch((error) =>
       console.error("nearby places cache write failed:", error)
     );
-    return output;
+    return cleaned;
   } catch (error) {
     console.error("nearby places generation failed:", error);
     // trip-tips와 동일 원칙 — 실패 결과는 캐시하지 않는다(AI 복구 후 재시도 가능하게).

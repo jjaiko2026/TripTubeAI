@@ -156,6 +156,9 @@ export interface NearbyPlace {
   reason: string;
   /** 대략적인 동네/구역 (있으면). */
   area: string | null;
+  /** 그 여행지의 대표성 + 여행 목적 부합도. 정확도 높은 순으로 앞에 배치하는 데 쓴다.
+   *  이 필드가 생기기 전 캐시된 항목에는 없을 수 있어(옵셔널) 그 경우 "medium"으로 취급한다. */
+  relevance?: "high" | "medium" | "low";
 }
 
 /** nearby_places_cache에 목적지 단위로 저장되는 값. */
