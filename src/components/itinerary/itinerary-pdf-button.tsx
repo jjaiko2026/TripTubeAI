@@ -101,12 +101,10 @@ async function generatePdfBlob(targetId: string, titleText: string): Promise<Blo
     import("jspdf"),
   ]);
 
-  // 일차 카드가 접혀 있으면(itinerary-days-list.tsx의 <details>) 그 내용이 캡처에서 빠지므로,
-  // 캡처 동안만 모두 펼쳤다가 원래 상태로 되돌린다.
-  const collapsedDetails = Array.from(
-    container.querySelectorAll<HTMLDetailsElement>("[data-pdf-day] details:not([open])")
-  );
-  collapsedDetails.forEach((d) => (d.open = true));
+  // 일차 카드가 접혀 있어도(itinerary-days-list.tsx의 <details>) PDF에는 전체가 나와야 한다.
+  // .pdf-capturing 클래스가 붙는 동안 CSS가 접힌 내용을 강제로 펼친다(globals.css). React
+  // 상태를 건드리지 않아 화면 깜빡임이 없다.
+  container.classList.add("pdf-capturing");
 
   const titleEl = createOffscreenTitleElement(titleText);
   document.body.appendChild(titleEl);
@@ -130,7 +128,7 @@ async function generatePdfBlob(targetId: string, titleText: string): Promise<Blo
     return pdf.output("blob");
   } finally {
     titleEl.remove();
-    collapsedDetails.forEach((d) => (d.open = false));
+    container.classList.remove("pdf-capturing");
   }
 }
 
