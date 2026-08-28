@@ -15,8 +15,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { track } from "@vercel/analytics";
 import { ItineraryLoading } from "@/components/plan/itinerary-loading";
 import { createItineraryAction } from "@/lib/actions";
+import { attributionProps } from "@/lib/attribution";
 import { ALL_MEMBER_TYPES, type MemberType, type Region, type TripRequest } from "@/lib/types";
 import {
   ALL_PURPOSE_IDS,
@@ -67,6 +69,8 @@ export function TripForm({
       <CardContent className="pt-6">
         <form
           action={(formData) => {
+            // 유입 채널(utm) + 목적지를 실어 "채널별 생성" 퍼널을 만든다. sendBeacon이라 리다이렉트에도 살아남음.
+            track("itinerary_created", { ...attributionProps(), region: value.region });
             startTransition(() => createItineraryAction(formData));
           }}
           className="space-y-6"
