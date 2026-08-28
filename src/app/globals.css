@@ -128,4 +128,9 @@
   html {
     @apply font-sans;
   }
+  /* PDF 캡처 중에는 접힌 일차(<details>)도 강제로 펼쳐 그린다 (itinerary-pdf-button.tsx). */
+  .pdf-capturing details > :not(summary) {
+    display: block !important;
+    content-visibility: visible !important;
+  }
 }
