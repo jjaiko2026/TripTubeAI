@@ -34,15 +34,18 @@ function publishedLabel(iso: string): string {
   return `${Math.floor(days / 365)}년 전`;
 }
 
+// 최근 1년만 보면 구체적인 장소명이 제목에 든 영상이 충분히 안 모여, 수집 기한을 2년으로 넓힌다.
+const RECENCY_WINDOW_YEARS = 2;
+
 /**
- * 최근 1년 내 유튜브 영상을 검색합니다. 여행당 1회만 호출되도록 상위에서 풀(pool)로
+ * 최근 2년 내 유튜브 영상을 검색합니다. 여행당 1회만 호출되도록 상위에서 풀(pool)로
  * 재사용합니다 (search.list는 100 유닛으로 일일 쿼터가 비쌉니다).
  */
 export async function fetchYoutubeVideos(query: string, maxResults = 8): Promise<SourceVideo[]> {
   if (!YOUTUBE_API_KEY) return [];
 
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const publishedAfter = new Date();
+  publishedAfter.setFullYear(publishedAfter.getFullYear() - RECENCY_WINDOW_YEARS);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6000);
@@ -56,7 +59,7 @@ export async function fetchYoutubeVideos(query: string, maxResults = 8): Promise
     searchUrl.searchParams.set("order", "relevance");
     searchUrl.searchParams.set("regionCode", "KR");
     searchUrl.searchParams.set("relevanceLanguage", "ko");
-    searchUrl.searchParams.set("publishedAfter", oneYearAgo.toISOString());
+    searchUrl.searchParams.set("publishedAfter", publishedAfter.toISOString());
     searchUrl.searchParams.set("safeSearch", "moderate");
     searchUrl.searchParams.set("key", YOUTUBE_API_KEY);
 

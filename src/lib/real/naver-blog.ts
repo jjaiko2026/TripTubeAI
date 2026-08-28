@@ -20,11 +20,14 @@ function stripTags(input: string): string {
     .replace(/&gt;/g, ">");
 }
 
-function isWithinLastYear(postdate: string): boolean {
+// 최근 1년만 보면 구체적인 장소명이 제목에 든 글이 충분히 안 모여, 수집 기한을 2년으로 넓힌다.
+const RECENCY_WINDOW_DAYS = 730;
+
+function isWithinRecencyWindow(postdate: string): boolean {
   if (!/^\d{8}$/.test(postdate)) return true;
   const date = new Date(`${postdate.slice(0, 4)}-${postdate.slice(4, 6)}-${postdate.slice(6, 8)}`);
   const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
-  return days >= 0 && days <= 365;
+  return days >= 0 && days <= RECENCY_WINDOW_DAYS;
 }
 
 function publishedLabelFromYYYYMMDD(value: string): string {
@@ -36,7 +39,7 @@ function publishedLabelFromYYYYMMDD(value: string): string {
   return `${Math.floor(days / 365)}년 전`;
 }
 
-/** 네이버 블로그 검색 API. 최근 1년 이내 글만 남기고 나머지는 걸러냅니다. */
+/** 네이버 블로그 검색 API. 최근 2년 이내 글만 남기고 나머지는 걸러냅니다. */
 export async function fetchNaverBlogs(query: string, display = 8): Promise<SourceBlog[]> {
   if (!CLIENT_ID || !CLIENT_SECRET) return [];
 
@@ -61,7 +64,7 @@ export async function fetchNaverBlogs(query: string, display = 8): Promise<Sourc
     const items = json.items ?? [];
 
     return items
-      .filter((it) => it.link && it.title && isWithinLastYear(it.postdate ?? ""))
+      .filter((it) => it.link && it.title && isWithinRecencyWindow(it.postdate ?? ""))
       .map(
         (it): SourceBlog => ({
           kind: "blog",
