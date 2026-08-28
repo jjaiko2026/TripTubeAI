@@ -341,6 +341,10 @@ async function generateItineraryWithAI(
           "이동/물류 항목은 tags를 빈 배열 []로 두세요 — 이런 항목은 관광·명소 같은 목적 태그를 붙이지 않습니다.",
         "각 항목의 title은 지도에 찍을 수 있는 구체적인 장소 하나만 가리켜야 합니다. " +
           "'A와 B', 'A & B'처럼 서로 다른 두 장소를 한 항목에 합치지 마세요 — 그런 경우 별도 항목으로 나누세요.",
+        "title은 그 장소가 지도·블로그·유튜브에서 널리 불리는 정식 명칭 그대로 쓰세요. 정식 " +
+          "이름에 없는 일반명사(예: '동방명주'를 '동방명주 타워'로, '난징루'를 '난징루 거리'로)를 " +
+          "임의로 덧붙이면 검색이 좁아져 참고자료가 안 붙습니다. '전망대 관람', '거리 산책' 같은 " +
+          "방문 방식·활동은 description에 쓰고 title에는 넣지 마세요.",
         request.region === "해외"
           ? "각 항목의 geocodeQuery는 title과 별개로, 지도 서비스가 실제로 찾을 수 있는 현지어 또는 영문 " +
             "이름으로 쓰세요. title이 한국어 발음 표기(예: '톈즈팡', '우캉루', '빈장대도')인 경우 " +
@@ -620,6 +624,21 @@ async function waitForCachedSources(query: string, maxWaitMs: number): Promise<S
   return null;
 }
 
+/**
+ * 네이버 블로그 검색은 유사도(sort=sim) 랭킹이라, 고유명사 뒤에 정식 이름에 없는 일반명사가
+ * 덧붙은 검색어(예: "상하이 동방명주 타워")는 정작 고유명사만 쓴 실제 후기 글을 display 컷
+ * 아래로 밀어내 0건이 나오곤 한다. 0건이면 마지막 토큰을 떼고 한 번만 더 시도한다 — 목적지
+ * 접두는 남으므로("상하이 …") 토큰이 3개 이상일 때만 하고, "상하이 예원"처럼 이미 짧은
+ * 검색어는 그대로 둔다.
+ */
+async function fetchNaverBlogsWithBackoff(query: string, count: number): Promise<Source[]> {
+  const blogs = await fetchNaverBlogs(query, count);
+  if (blogs.length > 0) return blogs;
+  const tokens = query.trim().split(/\s+/);
+  if (tokens.length < 3) return blogs;
+  return fetchNaverBlogs(tokens.slice(0, -1).join(" "), count);
+}
+
 async function searchAndCache(query: string): Promise<Source[]> {
   // YouTube는 유닛 비용이 커서 하루 상한을 넘으면 이번 쿼리는 API를 건너뛰고 네이버/목업으로만
   // 채웁니다 (PRD §12 Rate Limiter). Naver 블로그 검색은 쿼터가 상대적으로 넉넉해 상한을 두지 않습니다.
@@ -630,7 +649,7 @@ async function searchAndCache(query: string): Promise<Source[]> {
 
   const [videos, blogs] = await Promise.all([
     withinYoutubeBudget ? fetchYoutubeVideos(query, CANDIDATE_POOL_SIZE) : Promise.resolve([]),
-    fetchNaverBlogs(query, CANDIDATE_POOL_SIZE),
+    fetchNaverBlogsWithBackoff(query, CANDIDATE_POOL_SIZE),
   ]);
 
   // 실제 API 키가 없거나 검색 결과가 아예 없으면, 다음에 실제 데이터를 다시 시도할 수 있도록
@@ -691,7 +710,7 @@ async function fetchQueryBlogs(query: string): Promise<Source[]> {
   }
 
   try {
-    const blogs = await fetchNaverBlogs(query, CANDIDATE_POOL_SIZE);
+    const blogs = await fetchNaverBlogsWithBackoff(query, CANDIDATE_POOL_SIZE);
     if (blogs.length > 0) {
       await saveCachedSources(cacheKey, blogs).catch((error) => console.error("blog cache write failed:", error));
     }
@@ -1419,7 +1438,8 @@ async function regenerateSingleDay(
           ? `이 날은 여행 마지막 날입니다. 마지막 항목은 반드시 ${destination.name}의 ${departureWord}여야 하고, 항목은 3개 이하로 구성하세요.`
           : null,
         "각 항목의 tags는 request.purposes의 id 중에서 고르세요.",
-        "각 항목의 title은 지도에 찍을 수 있는 장소 하나만 가리켜야 합니다 — 'A와 B'로 두 장소를 합치지 마세요.",
+        "각 항목의 title은 지도에 찍을 수 있는 장소 하나만 가리켜야 합니다 — 'A와 B'로 두 장소를 합치지 마세요. " +
+          "정식 명칭에 없는 일반명사(예: '동방명주 타워')를 덧붙이지 말고, '전망대 관람' 같은 방문 방식은 description에 쓰세요.",
         request.region === "해외"
           ? "각 항목의 geocodeQuery는 지도 서비스가 찾을 수 있는 현지어/영문 이름으로 쓰세요(예: '톈즈팡' → 'Tianzifang'). 이미 유명 랜드마크명이면 title과 동일해도 됩니다."
           : "각 항목의 geocodeQuery는 보통 title과 동일하게 쓰면 됩니다.",
