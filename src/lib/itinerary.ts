@@ -837,6 +837,8 @@ function freshnessScore(source: Source): number {
   if (days <= 30) return 1;
   if (days <= 180) return 0.6;
   if (days <= 365) return 0.3;
+  // 수집 창이 2년이라 1~2년치도 정상 후보다. 3년+ 오래된 것(0.1)과는 구분해 준다.
+  if (days <= 730) return 0.2;
   return 0.1;
 }
 
