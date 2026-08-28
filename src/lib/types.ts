@@ -132,15 +132,22 @@ export interface UsageStatPoint {
   itinerariesGenerated: number;
 }
 
-/** "이 지역 더 둘러보기" — places 카탈로그가 아니라 일정과 같은 방식(AI)으로 생성한다. */
-export type NearbyPlaceCategory =
-  | "맛집"
-  | "명소"
-  | "카페"
-  | "자연"
-  | "체험"
-  | "쇼핑"
-  | "야경";
+/** "이 지역 더 둘러보기" — places 카탈로그가 아니라 일정과 같은 방식(AI)으로 생성한다.
+ *  분류는 여행 목적(PURPOSE_LABELS)과 동일한 taxonomy를 그대로 쓴다. */
+export const NEARBY_PLACE_CATEGORIES = [
+  "맛집·미식",
+  "휴양·힐링",
+  "자연·풍경",
+  "관광·명소",
+  "카페·감성",
+  "액티비티·체험",
+  "문화·역사",
+  "쇼핑",
+  "축제·공연·이벤트",
+  "야경·나이트라이프",
+] as const;
+
+export type NearbyPlaceCategory = (typeof NEARBY_PLACE_CATEGORIES)[number];
 
 export interface NearbyPlace {
   name: string;

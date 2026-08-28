@@ -3,11 +3,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DayFlowCard } from "@/components/itinerary/day-flow-card";
 import { ReviseDayForm } from "@/components/itinerary/revise-day-form";
-import { ItineraryItemCard } from "@/components/itinerary/itinerary-item-card";
+import { ItineraryDaysList } from "@/components/itinerary/itinerary-days-list";
 import { ItineraryMap } from "@/components/itinerary/itinerary-map";
 import { TripTipsCard } from "@/components/itinerary/trip-tips-card";
 import { formatKRW, monthLabel } from "@/lib/format";
-import { colorForDay } from "@/lib/day-colors";
 import type { Itinerary } from "@/lib/types";
 import { PURPOSE_LABELS } from "@/lib/purposes";
 import { MapPin, Users, CalendarDays, Wallet, Route } from "lucide-react";
@@ -127,55 +126,15 @@ export async function ItineraryView({
         <ReviseDayForm itineraryId={itineraryId} dayNumbers={itinerary.days.map((d) => d.day)} />
       )}
 
-      <div className="space-y-6">
-        {itinerary.days.map((day) => {
-          const dayColor = colorForDay(day.day);
-          let locatedCount = 0;
-
-          return (
-            // data-pdf-day로 표시된 카드는 PDF에서 하루당 정확히 한 페이지를 차지합니다.
-            // 항목을 모두 펼쳐 카드가 길어지면 페이지 안에 맞도록 통째로 축소해서 넣기 때문에
-            // 항목 중간이 잘리는 일이 없습니다(itinerary-pdf-button.tsx).
-            <Card
-              key={day.day}
-              id={`day-${day.day}`}
-              data-pdf-day={day.day}
-              className="scroll-mt-20"
-              style={{ backgroundColor: `${dayColor}26` }}
-            >
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <span
-                    className="rounded-full px-2.5 py-1 text-xs font-bold text-white"
-                    style={{ backgroundColor: dayColor }}
-                  >
-                    {day.day}일차
-                  </span>
-                  {day.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {day.items.map((item, idx) => {
-                  const indexInDay = item.location ? ++locatedCount : null;
-                  return (
-                    <ItineraryItemCard
-                      key={idx}
-                      item={item}
-                      color={dayColor}
-                      indexInDay={indexInDay}
-                      place={item.placeId ? placesById.get(item.placeId) : undefined}
-                      itineraryId={itineraryId}
-                      dayNumber={day.day}
-                      itemIndex={idx}
-                      canManage={canManage}
-                    />
-                  );
-                })}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      {/* data-pdf-day로 표시된 카드는 PDF에서 하루당 정확히 한 페이지를 차지합니다. 일차별
+          펼치기/접기는 <details>로 처리되며, PDF 생성 시에는 캡처 직전 모두 펼쳐집니다
+          (itinerary-days-list.tsx, itinerary-pdf-button.tsx). */}
+      <ItineraryDaysList
+        days={itinerary.days}
+        places={[...placesById.entries()]}
+        itineraryId={itineraryId}
+        canManage={canManage}
+      />
 
       <p data-pdf-section className="text-center text-xs text-muted-foreground">
         {hasAnySourcedItem

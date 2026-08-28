@@ -12,17 +12,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { addSuggestedItemToItineraryAction } from "@/lib/actions";
-import type { NearbyPlace, NearbyPlaceCategory } from "@/lib/types";
+import { NEARBY_PLACE_CATEGORIES, type NearbyPlace } from "@/lib/types";
 
-const CATEGORY_ORDER: NearbyPlaceCategory[] = [
-  "맛집",
-  "명소",
-  "카페",
-  "자연",
-  "체험",
-  "쇼핑",
-  "야경",
-];
+const CATEGORY_ORDER = NEARBY_PLACE_CATEGORIES;
 
 export function NearbyPlacesSection({
   itineraryId,

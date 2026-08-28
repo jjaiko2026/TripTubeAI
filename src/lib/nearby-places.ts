@@ -1,6 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import type { NearbyPlacesResult, Region } from "@/lib/types";
+import { NEARBY_PLACE_CATEGORIES, type NearbyPlacesResult, type Region } from "@/lib/types";
 import { PURPOSE_LABELS, type TripPurpose } from "@/lib/purposes";
 import {
   getCachedNearbyPlaces,
@@ -12,14 +12,12 @@ import { fastModel } from "@/lib/ai/model";
 // 창작이 아니라 "그 지역 유명 장소" 상기라 저렴한 모델로 충분합니다 (trip-tips.ts와 동일 판단).
 const NEARBY_PLACES_MODEL = fastModel;
 
-const CATEGORIES = ["맛집", "명소", "카페", "자연", "체험", "쇼핑", "야경"] as const;
-
 const nearbyPlacesSchema = z.object({
   places: z
     .array(
       z.object({
         name: z.string().describe("장소의 통용되는 정식 명칭 (한국어 표기 우선)."),
-        category: z.enum(CATEGORIES).describe("이 장소의 유형."),
+        category: z.enum(NEARBY_PLACE_CATEGORIES).describe("이 장소의 유형 (여행 목적 분류와 동일)."),
         reason: z.string().describe("왜 가볼 만한지 한 문장으로. 한국어."),
         area: z
           .string()
