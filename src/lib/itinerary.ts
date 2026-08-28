@@ -899,7 +899,7 @@ const GENERIC_TITLE_RES: RegExp[] = [
   /(BEST|베스트)\s*\d|추천\s*\d+\s*(곳|개|선)|\d+\s*가지|TOP\s*\d/i,
   /\[?(속보|단독)\]?/,
 ];
-const GENERIC_CONTENT_PENALTY = 0.55;
+const GENERIC_CONTENT_PENALTY = 0.20;
 
 /** 포괄 정리·리스트형 제목이면 점수를 눌러 우선순위 뒤로 보낸다(1.0=정상). */
 function genericContentPenalty(source: Source): number {
