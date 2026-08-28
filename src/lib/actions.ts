@@ -284,6 +284,10 @@ export async function createReviewAction(formData: FormData) {
   const rawItineraryId = String(formData.get("itineraryId") ?? "").trim();
   const itineraryId = UUID_RE.test(rawItineraryId) ? rawItineraryId : null;
 
+  // 선택 입력. 비었거나 숫자가 아니거나 0 이하면 null(집계에서 제외).
+  const rawCost = Number(formData.get("totalCost"));
+  const totalCost = Number.isFinite(rawCost) && rawCost > 0 ? Math.round(rawCost) : null;
+
   await createReview({
     userId: userId ?? null,
     author: String(formData.get("author") || "익명 여행자"),
@@ -293,6 +297,7 @@ export async function createReviewAction(formData: FormData) {
     content: String(formData.get("content") || ""),
     tripMonth: new Date().getMonth() + 1,
     nights: Math.max(0, Number(formData.get("nights") || 1)),
+    totalCost,
     itineraryId,
   });
 

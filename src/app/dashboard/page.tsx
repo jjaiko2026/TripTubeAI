@@ -16,6 +16,20 @@ export default async function DashboardPage() {
   const last30dGenerated = dashboard.dailyGenerated.reduce((sum, d) => sum + d.count, 0);
   const topDestination = dashboard.topDestinations[0];
 
+  // 여행지별 평균 비용: 후기에 경비를 남긴 표본이 REVIEW_COST_MIN_SAMPLES건 이상이면 그
+  // 평균으로 편집자 추정치(DESTINATION_COSTS)를 대체하고, 아니면 추정치를 그대로 쓴다.
+  const REVIEW_COST_MIN_SAMPLES = 5;
+  const reviewCostByDestination = new Map(
+    dashboard.reviewCostByDestination.map((r) => [r.destination, r])
+  );
+  const destinationCosts = DESTINATION_COSTS.map((c) => {
+    const r = reviewCostByDestination.get(c.destination);
+    return r && r.sampleCount >= REVIEW_COST_MIN_SAMPLES
+      ? { ...c, avgCostPerPersonPerNight: Math.round(r.avgPerNight), fromReviews: true }
+      : { ...c, fromReviews: false };
+  });
+  const anyFromReviews = destinationCosts.some((c) => c.fromReviews);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div className="mb-8">
@@ -76,10 +90,15 @@ export default async function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>여행지별 평균 여행 비용</CardTitle>
-            <CardDescription>1인 1박 기준 (숙박+식비+활동비 평균)</CardDescription>
+            <CardDescription>
+              1인 1박 기준 (숙박+식비+활동비).{" "}
+              {anyFromReviews
+                ? `후기 ${REVIEW_COST_MIN_SAMPLES}건 이상 쌓인 여행지는 후기 평균(초록), 그 외는 추정치(노랑).`
+                : `아직 후기 경비 표본이 부족해 전부 추정치입니다.`}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <DestinationCostChart data={DESTINATION_COSTS} />
+            <DestinationCostChart data={destinationCosts} />
           </CardContent>
         </Card>
 
