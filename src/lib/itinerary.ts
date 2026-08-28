@@ -529,7 +529,11 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
   return planDays;
 }
 
-const SOURCES_PER_ITEM = 3;
+// PRD v3.0 §13 — 일정 항목 하나당 참고자료는 "영상 1 + 블로그 2" 구성을 목표로 한다(사용자 요청).
+// 한쪽 종류의 후보가 부족하면 fillToKindQuota가 다른 종류로 남은 자리를 메운다.
+const VIDEOS_PER_ITEM = 1;
+const BLOGS_PER_ITEM = 2;
+const SOURCES_PER_ITEM = VIDEOS_PER_ITEM + BLOGS_PER_ITEM;
 // 목업 대체 전용 풀 크기(데모용). 실제 검색은 CANDIDATE_POOL_SIZE를 씁니다.
 const SOURCE_CANDIDATE_COUNT = 6;
 // PRD §13: search.list 1회당 최대 50개 후보. SearchPlan의 쿼리(최대 3개 + 보충 1개)는 장소
@@ -551,6 +555,38 @@ function interleave(a: Source[], b: Source[]): Source[] {
 function dedupeById(sources: Source[]): Source[] {
   const seen = new Set<string>();
   return sources.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)));
+}
+
+/**
+ * 점수순으로 정렬된 후보 pool에서, 이미 고른 existing에 이어 "영상 1 + 블로그 2" 구성을
+ * 목표로 추가로 고른다. 부족한 종류를 먼저 채우고, 그 종류 후보가 모자라면 다른 종류로
+ * 남은 자리를 메워 최대 SOURCES_PER_ITEM개가 되게 한다. 추가로 고른 것만 점수순으로 반환한다.
+ */
+function fillToKindQuota(existing: Source[], pool: Source[]): Source[] {
+  const room = SOURCES_PER_ITEM - existing.length;
+  if (room <= 0) return [];
+  let needVideo = VIDEOS_PER_ITEM - existing.filter((s) => s.kind === "youtube").length;
+  let needBlog = BLOGS_PER_ITEM - existing.filter((s) => s.kind === "blog").length;
+  const picked: Source[] = [];
+  for (const s of pool) {
+    if (picked.length >= room) break;
+    if (s.kind === "youtube" && needVideo > 0) {
+      picked.push(s);
+      needVideo--;
+    } else if (s.kind === "blog" && needBlog > 0) {
+      picked.push(s);
+      needBlog--;
+    }
+  }
+  // 한쪽 종류 후보가 부족해 자리가 남으면 종류를 가리지 않고 점수순으로 마저 채운다.
+  if (picked.length < room) {
+    const pickedIds = new Set(picked.map((s) => s.id));
+    for (const s of pool) {
+      if (picked.length >= room) break;
+      if (!pickedIds.has(s.id)) picked.push(s);
+    }
+  }
+  return picked;
 }
 
 /** 실제 API 키가 없거나 검색 결과가 부족할 때 채우는 목업 대체 */
@@ -865,21 +901,37 @@ function placeSearchQuery(destination: DestinationProfile, place: string): strin
   return `${destination.name} ${place}`;
 }
 
-// 공항/터미널 도착·출발, 이동, 수속 같은 물류 항목: 목적 태그가 없고(빈 배열), 관광 콘텐츠
-// 검색 대상도 아니다. AI가 tags를 []로 준 항목 + 이동 시설명이 제목에 든 항목을 물류로 본다
-// ("상하이 공항 출발"에 입국 브이로그가 붙던 문제).
+// 물류 항목 = 관광 활동이 아니라 이동/수속에 해당하는 항목. 두 갈래로 나눠 다룬다.
+//  1) 교통 거점(공항·터미널·기차역 등)이 제목에 든 항목 → "여행의 시작·끝이 공항"이라 공항에서
+//     시내로 나가는 방법·동선을 다룬 영상/블로그가 많다. 목적 태그는 안 붙이되, "{거점} 시내 이동"
+//     전용 검색어로 참고자료(영상 1 + 블로그 2)는 붙인다(§ transitSearchQuery).
+//  2) 그 외(호텔 체크인, 단순 이동 등 tags가 빈 항목) → 붙일 만한 콘텐츠가 없어 참고자료 없음.
+// 과거엔 둘 다 싸잡아 sources=[]였는데, 1)의 공항 출도착 콘텐츠까지 사라지는 게 아쉬워 분리했다
+// (예전엔 "상하이 공항 출발"을 그대로 검색해 입국 브이로그가 붙던 게 문제였고, 그건 전용 검색어로 해결).
 const TRANSIT_TITLE_RE =
   /(공항|국제공항|여객터미널|여객선\s*터미널|선착장|부두|버스\s*터미널|고속버스터미널|시외버스터미널|기차역|KTX\s*역)/;
-function isLogisticsItem(item: PlanItem): boolean {
-  return item.tags.length === 0 || TRANSIT_TITLE_RE.test(item.title);
+
+// 제목 끝의 도착/출발 방향 표현("~ 도착", "~으로 출발", "~로 이동" 등)을 떼어 거점 이름만 남긴다.
+const TRANSIT_DIRECTION_SUFFIX_RE = /\s*(?:(?:으?로\s*)?(?:출발|이동)|도착)(?:\s*후\s.*)?$/;
+
+/** 교통 거점 항목의 참고자료 검색어. 제목에서 방향 표현을 뗀 거점 전체 이름(예: "상하이 푸동
+ *  국제공항")에 "시내 이동"을 붙인다 — "공항에서 시내로 어떻게 나가는지"를 다룬 영상/블로그가
+ *  실제로 이렇게 제목을 단다. 도착/출발 항목이 같은 거점이면 검색어도 같아 search.list 1회로
+ *  공유된다. 거점 이름을 못 뽑으면 "목적지 + 공항"으로 폴백한다. */
+function transitSearchQuery(destination: DestinationProfile, title: string): string {
+  const hub = title.replace(TRANSIT_DIRECTION_SUFFIX_RE, "").trim();
+  const facility = title.match(TRANSIT_TITLE_RE)?.[1] ?? "공항";
+  const base = hub.length >= 2 ? hub : `${destination.name} ${facility}`;
+  return base.includes(destination.name) ? `${base} 시내 이동` : `${destination.name} ${base} 시내 이동`;
 }
 
 /**
  * 검증 장소와 매칭되지 않는 항목: 그 장소 자체를 검색어로 쓴 전용 풀(YouTube+블로그)에서
- * 최대 SOURCES_PER_ITEM개를 고릅니다. 매칭되는 항목: YouTube 전용 검색은 건너뛰고(§8/§10
- * 사다리) 그 장소 블로그만 검색해 1개를 붙입니다 — place 참고자료 + 블로그 1개.
+ * 영상 1 + 블로그 2를 고릅니다(fillToKindQuota). 매칭되는 항목: YouTube 전용 검색은
+ * 건너뛰고(§8/§10 사다리) 그 장소 블로그만 검색해 1개를 붙입니다 — place 참고자료 + 블로그 1개.
  * 좌표는 좌표 신뢰도가 검증된 매칭이면 그 값을 쓰고, 그 외에는 항목마다 지오코딩합니다.
- * 물류 항목(isLogisticsItem)은 소스 검색·부착을 아예 건너뜁니다.
+ * 교통 거점 항목(transitTitles)은 교통편 전용 검색어로 영상 1 + 블로그 2를 붙이고, 그 외
+ * 물류 항목(nonActivityTitles: 체크인·단순 이동 등)은 참고자료 없이 둡니다.
  */
 async function attachSourcesAndLocations(
   request: TripRequest,
@@ -893,7 +945,14 @@ async function attachSourcesAndLocations(
   const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
   const itemByTitle = new Map(plan.flatMap((d) => d.items).map((it) => [it.title, it]));
   const placeByTitle = new Map(uniqueTitles.map((title) => [title, primaryPlaceQuery(title)] as const));
-  const logisticsTitles = new Set(uniqueTitles.filter((title) => isLogisticsItem(itemByTitle.get(title)!)));
+  // 교통 거점 항목(공항·터미널·역): 교통편 전용 검색어로 참고자료를 붙인다.
+  const transitTitles = new Set(uniqueTitles.filter((title) => TRANSIT_TITLE_RE.test(title)));
+  // 그 외 물류 항목(체크인·단순 이동 등 tags가 빈 항목): 참고자료를 붙이지 않는다.
+  const nonActivityTitles = new Set(
+    uniqueTitles.filter((title) => !transitTitles.has(title) && itemByTitle.get(title)!.tags.length === 0)
+  );
+  // 두 갈래 모두 관광 목적 태그는 최종 매핑에서 강제로 비운다.
+  const logisticsTitles = new Set([...transitTitles, ...nonActivityTitles]);
 
   // PHASE 14-0 — title이 검증된 장소(관광공사 TourAPI 또는 검수된 Knowledge)와 같은 곳을
   // 가리키면 그 장소를 반환한다. verifiedPlaces가 비어 있으면(대다수 목적지) 이 맵도 비어
@@ -930,33 +989,44 @@ async function attachSourcesAndLocations(
   // 보충용으로 남겨둡니다 — 이 풀만으로 항목을 채우면 "탕롱수상인형극장"처럼 구체적인 항목에
   // "직장인 해외여행 추천"류 무관한 콘텐츠가 붙는 문제가 생기기 때문입니다.
   const searchPlan = buildSearchPlan(request, destination.name);
-  const [placePoolEntries, matchedBlogEntries, fallbackPool, rejectedSourceIds, locationEntries] = await Promise.all([
-    Promise.all(
-      placesToSearch.map(
-        async (place) => [place, await fetchQueryCandidates(placeSearchQuery(destination, place))] as const
-      )
-    ),
-    Promise.all(
-      matchedPlacesForBlog.map(
-        async (place) => [place, await fetchQueryBlogs(placeSearchQuery(destination, place))] as const
-      )
-    ),
-    buildTripCandidatePool(searchPlan),
-    getRejectedSourceIds().catch((error) => {
-      console.error("moderation lookup failed:", error);
-      return new Set<string>();
-    }),
-    Promise.all(
-      uniqueTitles.map(async (title) => {
-        const matched = coordReliableMatchByTitle.get(title);
-        if (matched) return [title, { lat: Number(matched.lat), lng: Number(matched.lng) }] as const;
-        return [title, await geocodeItem(destination, itemByTitle.get(title)!.geocodeQuery || title)] as const;
-      })
-    ),
-  ]);
+  // 교통 거점 항목용 전용 검색어(도착/출발이 같은 거점이면 하나로 합쳐진다).
+  const transitQueries = Array.from(
+    new Set(Array.from(transitTitles, (title) => transitSearchQuery(destination, title)))
+  );
+  const [placePoolEntries, matchedBlogEntries, transitPoolEntries, fallbackPool, rejectedSourceIds, locationEntries] =
+    await Promise.all([
+      Promise.all(
+        placesToSearch.map(
+          async (place) => [place, await fetchQueryCandidates(placeSearchQuery(destination, place))] as const
+        )
+      ),
+      Promise.all(
+        matchedPlacesForBlog.map(
+          async (place) => [place, await fetchQueryBlogs(placeSearchQuery(destination, place))] as const
+        )
+      ),
+      Promise.all(
+        transitQueries.map(async (query) => [query, await fetchQueryCandidates(query)] as const)
+      ),
+      buildTripCandidatePool(searchPlan),
+      getRejectedSourceIds().catch((error) => {
+        console.error("moderation lookup failed:", error);
+        return new Set<string>();
+      }),
+      Promise.all(
+        uniqueTitles.map(async (title) => {
+          const matched = coordReliableMatchByTitle.get(title);
+          if (matched) return [title, { lat: Number(matched.lat), lng: Number(matched.lng) }] as const;
+          return [title, await geocodeItem(destination, itemByTitle.get(title)!.geocodeQuery || title)] as const;
+        })
+      ),
+    ]);
   const locationByTitle = new Map(locationEntries);
   const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
   const blogPoolByPlace = new Map(matchedBlogEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
+  const transitPoolByQuery = new Map(
+    transitPoolEntries.map(([query, pool]) => [query, pool.filter((s) => !rejectedSourceIds.has(s.id))])
+  );
   const approvedFallbackPool = fallbackPool.filter((s) => !rejectedSourceIds.has(s.id));
 
   // 같은 소스가 여러 항목에 중복 노출되지 않도록, 이미 쓴 소스는 다음 항목에서 제외하고 고릅니다.
@@ -969,9 +1039,28 @@ async function attachSourcesAndLocations(
   // 넓혀서 채우는 건 전체 항목의 장소 전용 배정이 끝난 뒤(2단계)로 미룹니다.
   const shortTitles: string[] = [];
   for (const title of uniqueTitles) {
-    // 물류 항목(공항/터미널 도착·출발, 이동 등): 소스를 붙이지 않는다. shortTitles에도 넣지
-    // 않으므로 2단계 목적지 단위 보충에서도 제외된다.
-    if (logisticsTitles.has(title)) {
+    // 교통 거점 항목(공항·터미널·역): 관광 콘텐츠 검색은 건너뛰고, 교통편 전용 검색 풀에서만
+    // 영상 1 + 블로그 2를 고른다. 결과가 비면 그대로 빈 배열 — 무관한 관광 영상이 붙지 않도록
+    // shortTitles(2단계 목적지 단위 보충)에도 넣지 않는다.
+    if (transitTitles.has(title)) {
+      const transitItem = itemByTitle.get(title)!;
+      const transitPool = transitPoolByQuery.get(transitSearchQuery(destination, title)) ?? [];
+      const sorted = transitPool
+        .filter((s) => !usedSourceIds.has(s.id))
+        .map((source) => ({ source, score: scoreSourceForItem(transitItem, source, request, usedChannels) }))
+        .sort((a, b) => b.score - a.score)
+        .map((r) => r.source);
+      const picked = fillToKindQuota([], sorted);
+      for (const s of picked) {
+        usedSourceIds.add(s.id);
+        usedChannels.add(channelOrSite(s));
+      }
+      sourcesByTitle.set(title, picked);
+      continue;
+    }
+    // 그 외 물류 항목(체크인·단순 이동 등): 붙일 콘텐츠가 없어 참고자료 없음. shortTitles에도
+    // 넣지 않으므로 2단계 목적지 단위 보충에서도 제외된다.
+    if (nonActivityTitles.has(title)) {
       sourcesByTitle.set(title, []);
       continue;
     }
@@ -996,12 +1085,12 @@ async function attachSourcesAndLocations(
     const item = itemByTitle.get(title)!;
     const place = placeByTitle.get(title)!;
     const placePool = poolByPlace.get(place) ?? [];
-    const picked = placePool
+    const sorted = placePool
       .filter((s) => !usedSourceIds.has(s.id))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
-      .map((r) => r.source)
-      .slice(0, SOURCES_PER_ITEM);
+      .map((r) => r.source);
+    const picked = fillToKindQuota([], sorted);
 
     for (const s of picked) {
       usedSourceIds.add(s.id);
@@ -1017,15 +1106,14 @@ async function attachSourcesAndLocations(
   for (const title of shortTitles) {
     const item = itemByTitle.get(title)!;
     const picked = sourcesByTitle.get(title)!;
-    const remaining = SOURCES_PER_ITEM - picked.length;
-    if (remaining <= 0) continue;
+    if (picked.length >= SOURCES_PER_ITEM) continue;
 
-    const widened = approvedFallbackPool
+    const widenPool = approvedFallbackPool
       .filter((s) => !usedSourceIds.has(s.id))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
-      .map((r) => r.source)
-      .slice(0, remaining);
+      .map((r) => r.source);
+    const widened = fillToKindQuota(picked, widenPool);
 
     picked.push(...widened);
     for (const s of widened) {
