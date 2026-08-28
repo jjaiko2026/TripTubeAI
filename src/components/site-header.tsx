@@ -1,19 +1,26 @@
 import Link from "next/link";
 import { Plane } from "lucide-react";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
 import { MobileNav } from "@/components/mobile-nav";
+import { isAdminUser } from "@/lib/admin";
 
 const NAV_LINKS = [
   { href: "/", label: "홈" },
   { href: "/plan/new", label: "일정 만들기" },
   { href: "/plan/mine", label: "내 일정" },
-  { href: "/places", label: "장소 둘러보기" },
   { href: "/dashboard", label: "대시보드" },
   { href: "/reviews", label: "후기" },
 ];
 
-export function SiteHeader() {
+export async function SiteHeader() {
+  const { userId } = await auth();
+  // 관리자 링크는 관리자에게만 노출한다(/admin은 비관리자에게 404).
+  const navLinks = isAdminUser(userId)
+    ? [...NAV_LINKS, { href: "/admin", label: "관리자" }]
+    : NAV_LINKS;
+
   return (
     <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -25,7 +32,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-          {NAV_LINKS.map((link) => (
+          {navLinks.map((link) => (
             <Link key={link.href} href={link.href} className="transition-colors hover:text-foreground">
               {link.label}
             </Link>
@@ -46,7 +53,7 @@ export function SiteHeader() {
               <Button size="sm">일정 만들기</Button>
             </SignInButton>
           </Show>
-          <MobileNav links={NAV_LINKS} />
+          <MobileNav links={navLinks} />
         </div>
       </div>
     </header>

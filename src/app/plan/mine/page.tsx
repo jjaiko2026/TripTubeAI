@@ -37,9 +37,6 @@ export default async function MyItinerariesPage() {
             <Link href="/plan/new" className={cn(buttonVariants({ size: "sm" }))}>
               새 일정 만들기
             </Link>
-            <Link href="/places" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-              장소 둘러보기
-            </Link>
           </div>
         </div>
       ) : (

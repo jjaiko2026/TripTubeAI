@@ -12,49 +12,49 @@ import { exportKnowledgeToSheet, importKnowledgeStatusFromSheet } from "@/lib/sh
 
 export async function exportContentSheetAction() {
   const { userId } = await auth();
-  if (!isAdminUser(userId)) redirect("/dashboard");
+  if (!isAdminUser(userId)) redirect("/");
 
   let count: number;
   try {
     count = await exportContentToSheet();
   } catch (error) {
     console.error("Sheets export failed:", error);
-    redirect("/dashboard?sheets=error");
+    redirect("/admin?sheets=error");
   }
-  redirect(`/dashboard?sheets=exported&count=${count}`);
+  redirect(`/admin?sheets=exported&count=${count}`);
 }
 
 export async function importModerationSheetAction() {
   const { userId } = await auth();
-  if (!isAdminUser(userId)) redirect("/dashboard");
+  if (!isAdminUser(userId)) redirect("/");
 
   let result: { approved: number; rejected: number };
   try {
     result = await importModerationFromSheet();
   } catch (error) {
     console.error("Sheets import failed:", error);
-    redirect("/dashboard?sheets=error");
+    redirect("/admin?sheets=error");
   }
-  redirect(`/dashboard?sheets=imported&approved=${result.approved}&rejected=${result.rejected}`);
+  redirect(`/admin?sheets=imported&approved=${result.approved}&rejected=${result.rejected}`);
 }
 
 export async function exportKnowledgeSheetAction() {
   const { userId } = await auth();
-  if (!isAdminUser(userId)) redirect("/dashboard");
+  if (!isAdminUser(userId)) redirect("/");
 
   let count: number;
   try {
     count = await exportKnowledgeToSheet();
   } catch (error) {
     console.error("Knowledge sheet export failed:", error);
-    redirect("/dashboard?sheets=error");
+    redirect("/admin?sheets=error");
   }
-  redirect(`/dashboard?sheets=knowledge-exported&count=${count}`);
+  redirect(`/admin?sheets=knowledge-exported&count=${count}`);
 }
 
 export async function importKnowledgeSheetAction() {
   const { userId } = await auth();
-  if (!isAdminUser(userId)) redirect("/dashboard");
+  if (!isAdminUser(userId)) redirect("/");
 
   let result: Awaited<ReturnType<typeof importKnowledgeStatusFromSheet>>;
   try {
@@ -62,9 +62,9 @@ export async function importKnowledgeSheetAction() {
     result = await importKnowledgeStatusFromSheet(userId!);
   } catch (error) {
     console.error("Knowledge sheet import failed:", error);
-    redirect("/dashboard?sheets=error");
+    redirect("/admin?sheets=error");
   }
   // PHASE 11-2: confirmedWithoutPlaceId는 더 이상 실패/차단이 아니라 정보용 통계이므로 issues에 합산하지 않는다.
   const issues = result.duplicate + result.invalidId + result.notFound + result.invalidValue + result.checkViolation;
-  redirect(`/dashboard?sheets=knowledge-imported&updated=${result.updated}&skipped=${result.skipped}&issues=${issues}`);
+  redirect(`/admin?sheets=knowledge-imported&updated=${result.updated}&skipped=${result.skipped}&issues=${issues}`);
 }
