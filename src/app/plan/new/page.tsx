@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { TripPlanner } from "@/components/plan/trip-planner";
 import { RecentItineraries } from "@/components/plan/recent-itineraries";
@@ -9,15 +8,14 @@ export default async function PlanNewPage({
 }: {
   searchParams: Promise<{ editFrom?: string }>;
 }) {
+  // 비로그인도 일정을 만들어 결과까지 볼 수 있다(결과 페이지는 원래 소유자 무관 공개 조회).
+  // 저장·내 일정·수정은 여전히 로그인 사용자만 — createItineraryAction이 userId ?? null로 처리한다.
   const { userId } = await auth();
-  if (!userId) {
-    redirect("/plan/example?login=required");
-  }
 
   const { editFrom } = await searchParams;
   const [recentItineraries, editItinerary] = await Promise.all([
-    getRecentItinerariesForUser(userId, 3),
-    editFrom ? getItinerary(editFrom, userId) : Promise.resolve(null),
+    userId ? getRecentItinerariesForUser(userId, 3) : Promise.resolve([]),
+    editFrom && userId ? getItinerary(editFrom, userId) : Promise.resolve(null),
   ]);
 
   return (
@@ -30,8 +28,13 @@ export default async function PlanNewPage({
             어떤 여행을 계획하고 계신가요?
           </h1>
           <p className="mt-2 text-muted-foreground">
-            몇 가지 조건만 알려주시면, 최근 1년 내 유튜브·블로그 정보를 분석해 일정을 짜드려요.
+            몇 가지 조건만 알려주시면, 최근 유튜브·블로그 정보를 분석해 일정을 짜드려요.
           </p>
+          {!userId && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              로그인 없이 바로 만들어 볼 수 있어요. 로그인하면 만든 일정이 저장되고 나중에 수정할 수 있습니다.
+            </p>
+          )}
         </div>
       </div>
       {/* PHASE 6 — editItinerary가 null이면(id 없음/존재하지 않음/본인 소유 아님, getItinerary()가
