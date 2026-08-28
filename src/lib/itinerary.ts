@@ -874,6 +874,39 @@ function isPlaceMatch(source: Source, place: string): boolean {
   return sourceText(source).some((t) => t?.includes(place));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 검색 신뢰도 필터 — "장소 참고자료"로서 부적절한 후보를 걸러내거나 뒤로 민다.
+//
+// 1) 하드 제외(isLowTrustSource): 뉴스 채널. 사건·사고·보도 클립이라 여행 참고가 안 된다
+//    (예: "상하이 동방명주 유리 바닥 균열 소동"). 채널명 기준 — "걸어서 세계속으로"(KBS)
+//    같은 정규 여행 프로는 살려야 하므로 방송사 이름만으로 자르지 않고 "뉴스/news" 표지만 본다.
+// 2) 소프트 페널티(genericContentPenalty): "N박M일", "가볼만한 곳 BEST 10", "총정리" 류
+//    포괄 정리 콘텐츠. 특정 장소를 깊게 다루지 않아 우선순위에서 뒤로 민다(완전 제외는 아님 —
+//    다른 후보가 없으면 쓴다). 목업 대체 템플릿("… 3박4일 리얼 후기" 등)도 여기서 눌린다.
+// ─────────────────────────────────────────────────────────────────────────────
+const NEWS_CHANNEL_RE =
+  /(뉴스|\bnews\b|ytn|연합뉴스|연합뉴스tv|yonhap|뉴시스|newsis|뉴스타파|뉴스tvchosun)/i;
+
+/** 채널/사이트명이 뉴스 매체면 후보 풀에서 아예 뺀다. */
+function isLowTrustSource(source: Source): boolean {
+  return NEWS_CHANNEL_RE.test(channelOrSite(source));
+}
+
+const GENERIC_TITLE_RES: RegExp[] = [
+  /\d\s*박\s*\d\s*일/, //  "3박4일", "2박 3일"
+  /가볼만한\s*곳/,
+  /총정리|한눈에|완벽\s*정리|모아보기|모음집|끝판왕/,
+  /(BEST|베스트)\s*\d|추천\s*\d+\s*(곳|개|선)|\d+\s*가지|TOP\s*\d/i,
+  /\[?(속보|단독)\]?/,
+];
+const GENERIC_CONTENT_PENALTY = 0.55;
+
+/** 포괄 정리·리스트형 제목이면 점수를 눌러 우선순위 뒤로 보낸다(1.0=정상). */
+function genericContentPenalty(source: Source): number {
+  const title = source.title ?? "";
+  return GENERIC_TITLE_RES.some((re) => re.test(title)) ? GENERIC_CONTENT_PENALTY : 1;
+}
+
 /**
  * 후보 하나가 특정 일정 항목에 얼마나 맞는지 PRD §15 가중치로 점수를 매깁니다. 항목마다
  * 따로 검색하지 않는 대신, 여행 전체 후보 풀에서 AI 호출 없이(자체 랭킹) 항목에 맞는
@@ -907,13 +940,14 @@ function scoreSourceForItem(
   const sourceDiversity = usedChannels.has(channelOrSite(source)) ? 0.2 : 1;
 
   return (
-    destinationMatch * 0.3 +
-    purposeMatch * 0.25 +
-    tripStyleMatch * 0.15 +
-    placeMatch * 0.15 +
-    freshness * 0.05 +
-    engagement * 0.05 +
-    sourceDiversity * 0.05
+    (destinationMatch * 0.3 +
+      purposeMatch * 0.25 +
+      tripStyleMatch * 0.15 +
+      placeMatch * 0.15 +
+      freshness * 0.05 +
+      engagement * 0.05 +
+      sourceDiversity * 0.05) *
+    genericContentPenalty(source)
   );
 }
 
@@ -1043,12 +1077,12 @@ async function attachSourcesAndLocations(
       ),
     ]);
   const locationByTitle = new Map(locationEntries);
-  const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
-  const blogPoolByPlace = new Map(matchedBlogEntries.map(([place, pool]) => [place, pool.filter((s) => !rejectedSourceIds.has(s.id))]));
-  const transitPoolByQuery = new Map(
-    transitPoolEntries.map(([query, pool]) => [query, pool.filter((s) => !rejectedSourceIds.has(s.id))])
-  );
-  const approvedFallbackPool = fallbackPool.filter((s) => !rejectedSourceIds.has(s.id));
+  // 관리자 거부 소스 + 뉴스 채널(isLowTrustSource)은 후보 풀에서 아예 뺀다.
+  const approve = (pool: Source[]) => pool.filter((s) => !rejectedSourceIds.has(s.id) && !isLowTrustSource(s));
+  const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, approve(pool)]));
+  const blogPoolByPlace = new Map(matchedBlogEntries.map(([place, pool]) => [place, approve(pool)]));
+  const transitPoolByQuery = new Map(transitPoolEntries.map(([query, pool]) => [query, approve(pool)]));
+  const approvedFallbackPool = approve(fallbackPool);
 
   // 같은 소스가 여러 항목에 중복 노출되지 않도록, 이미 쓴 소스는 다음 항목에서 제외하고 고릅니다.
   const usedSourceIds = new Set<string>(seedUsed?.sourceIds ?? []);
