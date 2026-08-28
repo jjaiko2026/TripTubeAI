@@ -18,10 +18,30 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://triptube-ai.vercel.app";
+const SITE_TITLE = "TripTube AI — 유튜브·블로그를 모아 여행 일정을 짜드려요";
+const SITE_DESC =
+  "여행지, 인원, 기간, 시기, 목적만 알려주세요. AI가 유튜브 영상과 블로그 글을 찾아 일자별 동선과 출처까지 정리한 여행 일정을 만들어 드립니다.";
+
+// openGraph.images / twitter.images는 지정하지 않는다 — src/app/opengraph-image.png,
+// twitter-image.png 파일 컨벤션이 자동으로 채운다(하위 라우트에서 opengraph-image.tsx로 덮어쓸 수 있음).
 export const metadata: Metadata = {
-  title: "TripTube AI — 유튜브·블로그를 모아 여행 일정을 짜드려요",
-  description:
-    "여행지, 인원, 기간, 시기, 목적만 알려주세요. AI가 최근 1년간의 유튜브 영상과 블로그 글을 찾아 이상적인 여행 일정을 만들어 드립니다.",
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESC,
+  openGraph: {
+    type: "website",
+    locale: "ko_KR",
+    url: SITE_URL,
+    siteName: "TripTube AI",
+    title: SITE_TITLE,
+    description: SITE_DESC,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESC,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
