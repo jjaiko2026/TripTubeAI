@@ -127,7 +127,13 @@ const dayItemSchema = z.object({
   time: z.string(),
   title: z.string(),
   description: z.string(),
-  tags: z.array(z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]])).min(1),
+  tags: z
+    .array(z.enum(ALL_PURPOSE_IDS as [PurposeId, ...PurposeId[]]))
+    .describe(
+      "이 항목에 해당하는 request.purposes의 id들. 관광/식사/체험/휴식 등 실제 여행 활동 항목은 " +
+        "반드시 1개 이상. 단, 공항·터미널 도착/출발이나 이동·수속·체크인처럼 관광 활동이 아닌 " +
+        "이동/물류 항목은 빈 배열 []로 두세요 — 목적 태그를 억지로 붙이지 않습니다."
+    ),
   geocodeQuery: z
     .string()
     .describe(
@@ -331,7 +337,8 @@ async function generateItineraryWithAI(
           : null,
         "각 항목의 tags는 request.purposes의 id 중에서 선택하세요. priority가 core인 목적은 일정 전체에서 " +
           "여러 항목에 걸쳐 확실히 드러나도록 최우선으로 반영하고, important는 가능하면, normal은 여유가 " +
-          "있을 때만 반영하세요.",
+          "있을 때만 반영하세요. 단, 공항·터미널 도착/출발, 이동, 수속, 호텔 체크인처럼 관광 활동이 아닌 " +
+          "이동/물류 항목은 tags를 빈 배열 []로 두세요 — 이런 항목은 관광·명소 같은 목적 태그를 붙이지 않습니다.",
         "각 항목의 title은 지도에 찍을 수 있는 구체적인 장소 하나만 가리켜야 합니다. " +
           "'A와 B', 'A & B'처럼 서로 다른 두 장소를 한 항목에 합치지 마세요 — 그런 경우 별도 항목으로 나누세요.",
         request.region === "해외"
@@ -858,11 +865,21 @@ function placeSearchQuery(destination: DestinationProfile, place: string): strin
   return `${destination.name} ${place}`;
 }
 
+// 공항/터미널 도착·출발, 이동, 수속 같은 물류 항목: 목적 태그가 없고(빈 배열), 관광 콘텐츠
+// 검색 대상도 아니다. AI가 tags를 []로 준 항목 + 이동 시설명이 제목에 든 항목을 물류로 본다
+// ("상하이 공항 출발"에 입국 브이로그가 붙던 문제).
+const TRANSIT_TITLE_RE =
+  /(공항|국제공항|여객터미널|여객선\s*터미널|선착장|부두|버스\s*터미널|고속버스터미널|시외버스터미널|기차역|KTX\s*역)/;
+function isLogisticsItem(item: PlanItem): boolean {
+  return item.tags.length === 0 || TRANSIT_TITLE_RE.test(item.title);
+}
+
 /**
  * 검증 장소와 매칭되지 않는 항목: 그 장소 자체를 검색어로 쓴 전용 풀(YouTube+블로그)에서
  * 최대 SOURCES_PER_ITEM개를 고릅니다. 매칭되는 항목: YouTube 전용 검색은 건너뛰고(§8/§10
  * 사다리) 그 장소 블로그만 검색해 1개를 붙입니다 — place 참고자료 + 블로그 1개.
  * 좌표는 좌표 신뢰도가 검증된 매칭이면 그 값을 쓰고, 그 외에는 항목마다 지오코딩합니다.
+ * 물류 항목(isLogisticsItem)은 소스 검색·부착을 아예 건너뜁니다.
  */
 async function attachSourcesAndLocations(
   request: TripRequest,
@@ -876,6 +893,7 @@ async function attachSourcesAndLocations(
   const uniqueTitles = Array.from(new Set(plan.flatMap((d) => d.items.map((it) => it.title))));
   const itemByTitle = new Map(plan.flatMap((d) => d.items).map((it) => [it.title, it]));
   const placeByTitle = new Map(uniqueTitles.map((title) => [title, primaryPlaceQuery(title)] as const));
+  const logisticsTitles = new Set(uniqueTitles.filter((title) => isLogisticsItem(itemByTitle.get(title)!)));
 
   // PHASE 14-0 — title이 검증된 장소(관광공사 TourAPI 또는 검수된 Knowledge)와 같은 곳을
   // 가리키면 그 장소를 반환한다. verifiedPlaces가 비어 있으면(대다수 목적지) 이 맵도 비어
@@ -895,7 +913,11 @@ async function attachSourcesAndLocations(
   // 지식이 영상보다 신뢰할 수 있는 1차 근거다). 매칭되는 검증 장소가 없는 항목만 장소 전용
   // 검색 대상으로 남긴다 — 지원 지역 일정일수록 신규 search.list 호출이 크게 줄어든다.
   const placesToSearch = Array.from(
-    new Set(uniqueTitles.filter((title) => !matchedPlaceByTitle.has(title)).map((title) => placeByTitle.get(title)!))
+    new Set(
+      uniqueTitles
+        .filter((title) => !matchedPlaceByTitle.has(title) && !logisticsTitles.has(title))
+        .map((title) => placeByTitle.get(title)!)
+    )
   ).slice(0, MAX_PLACE_SEARCH_QUERIES);
 
   // 매칭된 항목은 YouTube 전용 검색은 건너뛰되(사다리), 그 장소 이름으로 네이버 블로그만
@@ -947,6 +969,12 @@ async function attachSourcesAndLocations(
   // 넓혀서 채우는 건 전체 항목의 장소 전용 배정이 끝난 뒤(2단계)로 미룹니다.
   const shortTitles: string[] = [];
   for (const title of uniqueTitles) {
+    // 물류 항목(공항/터미널 도착·출발, 이동 등): 소스를 붙이지 않는다. shortTitles에도 넣지
+    // 않으므로 2단계 목적지 단위 보충에서도 제외된다.
+    if (logisticsTitles.has(title)) {
+      sourcesByTitle.set(title, []);
+      continue;
+    }
     // 검증된 장소가 붙는 항목: YouTube 전용 검색·목적지 단위 보충은 하지 않고(§8/§10 사다리),
     // 그 장소 블로그 풀에서 가장 잘 맞는 1개만 붙인다. 블로그가 없으면 빈 배열(장소 정보만).
     if (matchedPlaceByTitle.has(title)) {
@@ -1018,6 +1046,9 @@ async function attachSourcesAndLocations(
       d.items.map(
         (it): ItineraryItem => ({
           ...it,
+          // 물류 항목은 관광 목적 태그를 달지 않는다 — AI가 tags를 채워 보냈어도 여기서 비운다
+          // (공항 도착 항목에 '관광·명소' 배지가 붙던 문제).
+          tags: logisticsTitles.has(it.title) ? [] : it.tags,
           sources: sourcesByTitle.get(it.title)!,
           location: locationByTitle.get(it.title) ?? null,
           placeId: matchedPlaceByTitle.get(it.title)?.id,
