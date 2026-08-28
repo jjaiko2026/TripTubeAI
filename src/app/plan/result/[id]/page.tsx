@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { NearbyPlacesSection } from "@/components/plan/nearby-places-section";
 import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button";
+import { ShareItineraryButton } from "@/components/plan/share-itinerary-button";
 import { WriteReviewDialog } from "@/components/reviews/write-review-dialog";
 import { DeleteItineraryButton } from "@/components/plan/delete-itinerary-button";
 import { getItinerary } from "@/db/queries";
@@ -60,6 +61,7 @@ export default async function PlanResultPage({
           <ArrowLeft className="h-4 w-4" /> 조건 다시 입력
         </Button>
         <div className="flex items-center gap-2">
+          <ShareItineraryButton title={pdfTitle} />
           <ItineraryPdfButton
             targetId="itinerary-printable"
             fileName={`${itinerary.destinationName}_여행일정.pdf`}
