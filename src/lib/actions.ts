@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { generateItinerary, reviseItineraryDay } from "@/lib/itinerary";
 import {
+  addAiItemToItinerary,
   addPlaceToItinerary,
   createReview,
   deleteItinerary,
@@ -182,6 +183,27 @@ export async function addPlaceToItineraryAction(formData: FormData) {
   await logPipelineBEvent({ eventType: "place_selected", userId, placeId, itineraryId });
   revalidatePath(`/plan/result/${itineraryId}`);
   revalidatePath(`/places/${placeId}`);
+}
+
+/**
+ * "이 지역 더 둘러보기"(src/components/plan/nearby-places-section.tsx)에서 고른 AI 제안
+ * 장소를 일정 날짜에 추가한다. addPlaceToItineraryAction과 달리 DB의 places 행이 아니라
+ * 제안 텍스트(title/reason)를 그대로 항목으로 넣는다. 로그인하지 않았거나 본인 소유 일정이
+ * 아니면 조용히 아무 것도 하지 않는다(addAiItemToItinerary의 소유자 검사와 이중 보호).
+ */
+export async function addSuggestedItemToItineraryAction(formData: FormData) {
+  const { userId } = await auth();
+  if (!userId) return;
+
+  const itineraryId = String(formData.get("itineraryId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const dayRaw = Number(formData.get("day") ?? 1);
+  const day = Number.isFinite(dayRaw) && dayRaw >= 1 ? Math.trunc(dayRaw) : 1;
+  if (!itineraryId || !title) return;
+
+  await addAiItemToItinerary(itineraryId, userId, day, { title, description });
+  revalidatePath(`/plan/result/${itineraryId}`);
 }
 
 /**

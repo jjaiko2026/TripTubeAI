@@ -131,3 +131,27 @@ export interface UsageStatPoint {
   visits: number;
   itinerariesGenerated: number;
 }
+
+/** "이 지역 더 둘러보기" — places 카탈로그가 아니라 일정과 같은 방식(AI)으로 생성한다. */
+export type NearbyPlaceCategory =
+  | "맛집"
+  | "명소"
+  | "카페"
+  | "자연"
+  | "체험"
+  | "쇼핑"
+  | "야경";
+
+export interface NearbyPlace {
+  name: string;
+  category: NearbyPlaceCategory;
+  /** 왜 가볼 만한지 한 문장. */
+  reason: string;
+  /** 대략적인 동네/구역 (있으면). */
+  area: string | null;
+}
+
+/** nearby_places_cache에 목적지 단위로 저장되는 값. */
+export interface NearbyPlacesResult {
+  places: NearbyPlace[];
+}
