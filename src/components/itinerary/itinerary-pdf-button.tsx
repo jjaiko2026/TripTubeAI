@@ -107,12 +107,11 @@ async function capturePageCanvases(targetId: string, titleText: string): Promise
   document.body.appendChild(titleEl);
 
   try {
-    const pageGroups: HTMLElement[][] = [
-      [titleEl, ...summaryEls],
-      ...dayEls.map((el) => [el]),
-      ...trailingEls.map((el) => [el]),
-    ];
+    const pageGroups: HTMLElement[][] = [[titleEl, ...summaryEls], ...dayEls.map((el) => [el])];
     if (pageGroups.length === 0) return null;
+    // 안내 문구(data-pdf-section)는 그 자체로 새 페이지를 차지하면 마지막 한 줄 때문에 페이지가
+    // 하나 더 늘어나므로, 마지막 페이지(보통 마지막 날짜)의 내용 아래에 이어 붙인다.
+    pageGroups[pageGroups.length - 1].push(...trailingEls);
 
     const canvases: HTMLCanvasElement[] = [];
     for (const group of pageGroups) {
@@ -185,8 +184,12 @@ export function ItineraryPdfButton({
       const a = document.createElement("a");
       a.href = url;
       a.download = fileName;
+      // iOS Safari 등 일부 모바일 브라우저는 DOM에 붙지 않은 <a>의 click()을 무시하고,
+      // click() 직후 바로 revoke하면 다운로드가 시작되기 전에 blob이 무효화될 수 있다.
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
       setError(true);
     } finally {

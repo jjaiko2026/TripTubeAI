@@ -88,6 +88,9 @@ export function ItineraryItemCard({
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>
+          {item.priceHint && (
+            <p className="mt-0.5 text-xs text-muted-foreground">💰 예상 가격: {item.priceHint}</p>
+          )}
         </div>
       </div>
 

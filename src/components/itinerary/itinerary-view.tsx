@@ -138,7 +138,7 @@ export async function ItineraryView({
 
       <p data-pdf-section className="text-center text-xs text-muted-foreground">
         {hasAnySourcedItem
-          ? "* 본 일정은 AI가 최근 1년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."
+          ? "* 본 일정은 AI가 최근 2년 내 유튜브·블로그 데이터를 검색해 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."
           : hasReferencedPlace
             ? "* 본 일정은 AI가 한국관광공사·검수된 여행 지식을 참고해 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."
             : "* 본 일정은 AI가 선택한 장소 정보를 바탕으로 구성한 결과입니다. 방문 전 최신 정보를 다시 확인해 주세요."}
