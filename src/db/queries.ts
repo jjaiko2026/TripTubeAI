@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { itineraries, placeTourismDetails, places, regions, reviews } from "@/db/schema";
@@ -115,7 +116,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * userId를 넘기면 본인 소유 일정일 때만 반환합니다("조건 다시 입력" 프리필처럼 다른 사람의
  * 요청 내용을 노출하면 안 되는 조회에 사용). 결과 페이지 등 소유자 무관 조회는 생략합니다.
  */
-export async function getItinerary(id: string, userId?: string): Promise<Itinerary | null> {
+export const getItinerary = cache(async function getItinerary(
+  id: string,
+  userId?: string
+): Promise<Itinerary | null> {
   if (!UUID_RE.test(id)) return null;
 
   const db = getDb();
@@ -144,7 +148,7 @@ export async function getItinerary(id: string, userId?: string): Promise<Itinera
     // 이 컬럼이 생기기 전에 저장된 일정은 null이라 빈 값으로 대체합니다.
     tripTips: (row.tripTips as TripTips | null) ?? EMPTY_TRIP_TIPS,
   };
-}
+});
 
 export async function getReviews(): Promise<Review[]> {
   const db = getDb();

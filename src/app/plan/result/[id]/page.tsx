@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
@@ -11,6 +12,31 @@ import { WriteReviewDialog } from "@/components/reviews/write-review-dialog";
 import { DeleteItineraryButton } from "@/components/plan/delete-itinerary-button";
 import { getItinerary } from "@/db/queries";
 import { monthLabel } from "@/lib/format";
+
+// getItinerary()는 React cache()로 감싸져 있어(§db/queries.ts) 아래 페이지 컴포넌트가
+// 같은 id로 다시 호출해도 같은 요청 안에서는 DB를 한 번만 조회한다.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const itinerary = await getItinerary(id);
+  if (!itinerary) return {};
+
+  const { request } = itinerary;
+  const title = `${itinerary.destinationName} ${monthLabel(request.month)} ${request.nights}박 ${request.nights + 1}일 여행 일정 | TripTube AI`;
+  const description = `AI가 유튜브·블로그를 분석해 만든 ${itinerary.destinationName} 여행 일정을 확인해 보세요.`;
+
+  return {
+    title,
+    description,
+    // openGraph/twitter는 부모(layout.tsx) 메타데이터와 병합되지 않고 통째로 대체되므로,
+    // 여기서 지우면 안 되는 site 전역 필드(type/locale/siteName, twitter card 종류)를 그대로 반복한다.
+    openGraph: { type: "website", locale: "ko_KR", siteName: "TripTube AI", title, description },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
 
 export default async function PlanResultPage({
   params,
