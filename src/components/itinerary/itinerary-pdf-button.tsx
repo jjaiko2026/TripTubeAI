@@ -39,7 +39,10 @@ function drawFittedToPage(pdf: import("jspdf").jsPDF, canvas: HTMLCanvasElement)
 // PDF 제목의 폰트/크기. sm: 브레이크포인트가 적용된 text-3xl(1.875rem)에 맞춘 값이라
 // CAPTURE_WINDOW_WIDTH_PX 강제 폭 조건과 짝을 이룬다.
 const TITLE_FONT_SIZE_PX = 30;
-const TITLE_CANVAS_HEIGHT_PX = 56;
+// 제목이 페이지 맨 위에 너무 바짝 붙어 보인다는 피드백으로 위쪽 여백을 아래쪽보다 넉넉히 둔다.
+const TITLE_TOP_PADDING_PX = 22;
+const TITLE_BOTTOM_PADDING_PX = 14;
+const TITLE_CANVAS_HEIGHT_PX = TITLE_TOP_PADDING_PX + TITLE_FONT_SIZE_PX + TITLE_BOTTOM_PADDING_PX;
 // 한글·숫자·영문을 모두 포함하는 시스템 한글 폰트 순서(플랫폼마다 이름이 달라 여러 개
 // 나열 — 각 OS에서 앞쪽에 있는 것부터 있는 걸 쓴다). 앱 전체에 쓰이는 Geist는 라틴
 // 전용이라 이 폰트 목록에서 제외한다.
@@ -66,8 +69,8 @@ function drawTitleCanvas(titleText: string): HTMLCanvasElement {
   ctx.fillStyle = "#0a0a0a"; // globals.css --foreground(라이트 모드) 근사값 — PDF는 항상 흰 배경이라 고정
   ctx.font = `700 ${TITLE_FONT_SIZE_PX}px ${TITLE_FONT_FAMILY}`;
   ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(titleText, CAPTURE_WINDOW_WIDTH_PX / 2, TITLE_CANVAS_HEIGHT_PX / 2);
+  ctx.textBaseline = "top";
+  ctx.fillText(titleText, CAPTURE_WINDOW_WIDTH_PX / 2, TITLE_TOP_PADDING_PX);
   return canvas;
 }
 
