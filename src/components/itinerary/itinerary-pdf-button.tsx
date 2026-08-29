@@ -30,7 +30,10 @@ function drawFittedToPage(pdf: import("jspdf").jsPDF, canvas: HTMLCanvasElement)
   }
 
   const x = MARGIN_MM + (CONTENT_WIDTH_MM - widthMm) / 2;
-  pdf.addImage(canvas.toDataURL("image/png"), "PNG", x, MARGIN_MM, widthMm, heightMm);
+  // PNG(무손실)로 넣으면 날짜가 많은 일정은 PDF가 수 MB까지 커져 /api/pdf-download 요청이
+  // 서버리스 함수 페이로드 한도(413)에 걸렸다(실기기 확인). 캡처 내용은 흰 배경 위 텍스트/카드라
+  // JPEG로 바꿔도 육안 차이는 거의 없이 용량만 크게 줄어든다.
+  pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", x, MARGIN_MM, widthMm, heightMm);
 }
 
 /** PDF 1페이지 맨 위에만 들어가는 제목. 일정 화면(일정 만들기 결과 페이지)에는 노출하지
@@ -200,7 +203,7 @@ export function ItineraryPdfButton({
         return;
       }
       canvasesRef.current = canvases;
-      setPreviewPages(canvases.map((canvas) => canvas.toDataURL("image/png")));
+      setPreviewPages(canvases.map((canvas) => canvas.toDataURL("image/jpeg", 0.85)));
     } catch {
       setError(true);
     } finally {
