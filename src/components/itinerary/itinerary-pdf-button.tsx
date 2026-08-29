@@ -32,8 +32,9 @@ function drawFittedToPage(pdf: import("jspdf").jsPDF, canvas: HTMLCanvasElement)
   const x = MARGIN_MM + (CONTENT_WIDTH_MM - widthMm) / 2;
   // PNG(무손실)로 넣으면 날짜가 많은 일정은 PDF가 수 MB까지 커져 /api/pdf-download 요청이
   // 서버리스 함수 페이로드 한도(413)에 걸렸다(실기기 확인). 캡처 내용은 흰 배경 위 텍스트/카드라
-  // JPEG로 바꿔도 육안 차이는 거의 없이 용량만 크게 줄어든다.
-  pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", x, MARGIN_MM, widthMm, heightMm);
+  // JPEG로 바꿔도 육안 차이는 거의 없이 용량만 크게 줄어든다. 품질을 0.85→0.72로 한 번 더
+  // 낮춰, 모바일 네트워크에서 왕복 전송 중 끊길 위험을 줄인다(전송 용량이 작을수록 유리).
+  pdf.addImage(canvas.toDataURL("image/jpeg", 0.72), "JPEG", x, MARGIN_MM, widthMm, heightMm);
 }
 
 // PDF 제목의 폰트/크기. sm: 브레이크포인트가 적용된 text-3xl(1.875rem)에 맞춘 값이라
@@ -108,9 +109,14 @@ async function captureStacked(
   html2canvas: typeof import("html2canvas-pro").default,
   elements: HTMLElement[]
 ): Promise<HTMLCanvasElement> {
+  // 다운로드가 PDF를 /api/pdf-download로 왕복 전송해야 해서(인앱 브라우저의 blob 다운로드
+  // 제약 우회용, downloadViaServerRoundTrip() 참고), 모바일 네트워크에서는 전송 용량이
+  // 클수록 중간에 끊길 위험이 커진다(실기기에서 "다운로드 중"이 뜨다 네트워크 오류로
+  // 실패하는 것 확인). scale 2 → 1.5로 낮춰 픽셀 수 자체를 줄인다(화면/인쇄 모두 여전히
+  // 충분히 선명한 해상도).
   const canvases = await Promise.all(
     elements.map((el) =>
-      html2canvas(el, { scale: 2, backgroundColor: "#ffffff", windowWidth: CAPTURE_WINDOW_WIDTH_PX })
+      html2canvas(el, { scale: 1.5, backgroundColor: "#ffffff", windowWidth: CAPTURE_WINDOW_WIDTH_PX })
     )
   );
   return stackCanvases(canvases);
