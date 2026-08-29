@@ -139,19 +139,17 @@ async function buildPdfBlob(canvases: HTMLCanvasElement[]): Promise<Blob> {
  * (카카오톡/네이버 앱 등)에서 조용히 실패한다 — 그 WebView들의 다운로드 매니저가 blob: URL을
  * 못 읽기 때문이다(실기기 확인됨). 대신 PDF를 /api/pdf-download로 그대로 왕복시켜 진짜
  * Content-Disposition 응답으로 돌려받으면 어떤 브라우저/WebView에서도 정상 처리된다.
- * 보이는 페이지가 이동하면 안 되므로 숨겨진 iframe을 제출 대상으로 쓴다.
+ *
+ * 처음엔 화면 이동을 막으려고 숨겨진 iframe을 제출 대상으로 썼는데, 카카오톡 인앱 브라우저는
+ * (보안상 이유로 보이는) 서브프레임으로의 다운로드 자체를 조용히 무시했다(실기기 확인 —
+ * 버튼만 비활성화됐다 풀리고 아무 반응 없음). 최상위 프레임에서 제출해야 하며, 대부분의
+ * 브라우저는 Content-Disposition: attachment 응답을 페이지 이동 없이 다운로드만 가로채므로
+ * (표준 동작) 현재 페이지에 그대로 머문다.
  */
 function downloadViaServerRoundTrip(blob: Blob, fileName: string) {
-  const iframeName = `pdf-download-${Date.now()}`;
-  const iframe = document.createElement("iframe");
-  iframe.name = iframeName;
-  iframe.style.display = "none";
-  document.body.appendChild(iframe);
-
   const form = document.createElement("form");
   form.method = "POST";
   form.action = "/api/pdf-download";
-  form.target = iframeName;
   form.enctype = "multipart/form-data";
   form.style.display = "none";
 
@@ -171,10 +169,7 @@ function downloadViaServerRoundTrip(blob: Blob, fileName: string) {
 
   document.body.appendChild(form);
   form.submit();
-  setTimeout(() => {
-    form.remove();
-    iframe.remove();
-  }, 5000);
+  setTimeout(() => form.remove(), 5000);
 }
 
 export function ItineraryPdfButton({
