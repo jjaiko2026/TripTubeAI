@@ -47,6 +47,13 @@ function createOffscreenTitleElement(titleText: string): HTMLElement {
   el.style.top = "-10000px";
   el.style.left = "0";
   el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
+  // 한글은 시스템 폰트로, 숫자/영문(Geist)은 다른 폰트로 렌더링돼 스크립트가 섞이면
+  // html2canvas가 줄 안에서 세로 위치를 다르게 잡는 경우가 있다(실기기에서 숫자만 반 줄
+  // 아래로 밀리고 위쪽이 잘리는 현상 확인). line-height/여백을 넉넉히 둬서 어떤 폰트로
+  // 그려지든 잘리지 않게 여유 공간을 준다.
+  el.style.lineHeight = "1.6";
+  el.style.paddingTop = "0.4em";
+  el.style.paddingBottom = "0.2em";
   el.className = "text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl";
   return el;
 }
@@ -137,6 +144,18 @@ async function buildPdfBlob(canvases: HTMLCanvasElement[]): Promise<Blob> {
   return pdf.output("blob");
 }
 
+/** Blob을 base64 문자열로 바꾼다. 한 번에 스프레드하면 아주 큰 파일에서 인자 개수 한도에
+ *  걸릴 수 있어 청크 단위로 처리한다. */
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 /**
  * blob: URL을 <a download>로 저장하는 방식은 안드로이드 WebView 기반 인앱 브라우저
  * (카카오톡/네이버 앱 등)에서 조용히 실패한다 — 그 WebView들의 다운로드 매니저가 blob: URL을
@@ -144,25 +163,29 @@ async function buildPdfBlob(canvases: HTMLCanvasElement[]): Promise<Blob> {
  * Content-Disposition 응답으로 돌려받으면 어떤 브라우저/WebView에서도 정상 처리된다.
  *
  * 처음엔 화면 이동을 막으려고 숨겨진 iframe을 제출 대상으로 썼는데, 카카오톡 인앱 브라우저는
- * (보안상 이유로 보이는) 서브프레임으로의 다운로드 자체를 조용히 무시했다(실기기 확인 —
- * 버튼만 비활성화됐다 풀리고 아무 반응 없음). 최상위 프레임에서 제출해야 하며, 대부분의
- * 브라우저는 Content-Disposition: attachment 응답을 페이지 이동 없이 다운로드만 가로채므로
- * (표준 동작) 현재 페이지에 그대로 머문다.
+ * 서브프레임으로의 다운로드 자체를 조용히 무시했다(실기기 확인). 최상위 프레임에서 제출해야
+ * 하며, 대부분의 브라우저는 Content-Disposition: attachment 응답을 페이지 이동 없이 다운로드만
+ * 가로채므로(표준 동작) 현재 페이지에 그대로 머문다.
+ *
+ * <input type="file">에 DataTransfer로 파일을 채워 넣는 방식은, 파일 크기와 무관하게(1박2일
+ * 짧은 일정도 동일) 카카오톡에서 "네트워크 연결이 원활하지 않습니다"로 실패했다 — 카카오톡
+ * 인앱 브라우저가 파일 입력 기반 제출 자체를 막는 것으로 보인다. 대신 PDF를 base64 텍스트로
+ * 바꿔 평범한 hidden 필드로 보낸다 — 파일 입력을 전혀 쓰지 않는 가장 기본적인 폼 제출이라
+ * 막힐 이유가 없다.
  */
-function downloadViaServerRoundTrip(blob: Blob, fileName: string) {
+async function downloadViaServerRoundTrip(blob: Blob, fileName: string) {
+  const fileBase64 = await blobToBase64(blob);
+
   const form = document.createElement("form");
   form.method = "POST";
   form.action = "/api/pdf-download";
-  form.enctype = "multipart/form-data";
   form.style.display = "none";
 
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.name = "file";
-  const dataTransfer = new DataTransfer();
-  dataTransfer.items.add(new File([blob], fileName, { type: "application/pdf" }));
-  fileInput.files = dataTransfer.files;
-  form.appendChild(fileInput);
+  const dataInput = document.createElement("input");
+  dataInput.type = "hidden";
+  dataInput.name = "fileBase64";
+  dataInput.value = fileBase64;
+  form.appendChild(dataInput);
 
   const filenameInput = document.createElement("input");
   filenameInput.type = "hidden";
@@ -221,7 +244,7 @@ export function ItineraryPdfButton({
     setIsDownloading(true);
     try {
       const blob = await buildPdfBlob(canvasesRef.current);
-      downloadViaServerRoundTrip(blob, fileName);
+      await downloadViaServerRoundTrip(blob, fileName);
     } catch {
       setError(true);
     } finally {
