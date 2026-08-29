@@ -36,61 +36,43 @@ function drawFittedToPage(pdf: import("jspdf").jsPDF, canvas: HTMLCanvasElement)
   pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", x, MARGIN_MM, widthMm, heightMm);
 }
 
-/** PDF 1페이지 맨 위에만 들어가는 제목. 일정 화면(일정 만들기 결과 페이지)에는 노출하지
- *  않으므로 화면 DOM에 넣지 않고, 캡처 직전에만 화면 밖(위쪽 멀리)에 임시로 렌더링해
- *  html2canvas로 찍은 뒤 바로 제거합니다. */
-function createOffscreenTitleElement(titleText: string): HTMLElement {
-  const el = document.createElement("h2");
-  el.setAttribute("aria-hidden", "true");
-  el.style.position = "fixed";
-  el.style.top = "-10000px";
-  el.style.left = "0";
-  el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
-  el.className = "text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl";
-  // 앱 전체에 적용된 Geist(라틴 전용)로 "TripTubeAI"/숫자를 그리고 한글만 시스템 폰트로
-  // 그려지면, 두 폰트의 Bold 두께·글자 높이가 서로 달라 같은 font-size라도 "TripTubeAI"가
-  // 더 크고 두껍게 보인다(실기기 확인). 이 제목만 한글·숫자·영문을 전부 포함하는 시스템
-  // 한글 폰트 하나로 강제해 폰트가 섞이지 않게 한다(플랫폼마다 이름이 달라 여러 개를
-  // 순서대로 나열 — 각 OS에서 앞쪽에 있는 것부터 있는 걸 쓴다).
-  el.style.fontFamily =
-    '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif';
-  // 그와 별개로, 숫자/영문("5월", "3박 4일" 등)이 한글과 한 텍스트 노드 안에서 섞이면
-  // html2canvas 기본 canvas 렌더러가 베이스라인을 잘못 계산해 그 부분만 반 줄 아래로
-  // 밀리는 알려진 문제가 있다(같은 폰트를 써도 재현 — 실기기 확인). foreignObjectRendering
-  // 으로 전환해봤지만 실기기에서 아예 렌더링이 안 돼(제목 전체가 사라짐) 되돌렸다. 대신
-  // 공백 없는 "단어" 안에서만 한글/그외(숫자·영문·기호) 구간을 별도 inline-block span으로
-  // 쪼갠다 — 한 span 안에는 한 스크립트만 있어 html2canvas가 섞어서 그릴 일이 없고, 각
-  // span의 위치는 html2canvas가 이미 잘 처리하는 일반 박스 레이아웃으로 계산된다. 공백은
-  // span 안에 넣으면 가장자리 공백으로 처리돼 사라지므로(로컬 테스트로 확인한 실제 회귀),
-  // 항상 부모에 바로 붙는 일반 텍스트 노드로 남긴다.
-  for (const token of titleText.split(/(\s+)/)) {
-    if (token === "") continue;
-    if (/^\s+$/.test(token)) {
-      el.appendChild(document.createTextNode(token));
-      continue;
-    }
-    const scriptRuns = token.match(/[가-힣ㄱ-ㆎ]+|[^가-힣ㄱ-ㆎ]+/g) ?? [token];
-    for (const run of scriptRuns) {
-      const span = document.createElement("span");
-      span.style.display = "inline-block";
-      span.textContent = run;
-      el.appendChild(span);
-    }
-  }
-  return el;
+// PDF 제목의 폰트/크기. sm: 브레이크포인트가 적용된 text-3xl(1.875rem)에 맞춘 값이라
+// CAPTURE_WINDOW_WIDTH_PX 강제 폭 조건과 짝을 이룬다.
+const TITLE_FONT_SIZE_PX = 30;
+const TITLE_CANVAS_HEIGHT_PX = 56;
+// 한글·숫자·영문을 모두 포함하는 시스템 한글 폰트 순서(플랫폼마다 이름이 달라 여러 개
+// 나열 — 각 OS에서 앞쪽에 있는 것부터 있는 걸 쓴다). 앱 전체에 쓰이는 Geist는 라틴
+// 전용이라 이 폰트 목록에서 제외한다.
+const TITLE_FONT_FAMILY = '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif';
+
+/**
+ * PDF 1페이지 맨 위에만 들어가는 제목을 html2canvas를 거치지 않고 Canvas 2D의
+ * fillText()로 직접 그립니다. html2canvas는 DOM을 자체 알고리즘으로 다시 그리는데,
+ * 한글과 숫자/영문이 한 줄에 섞이면 베이스라인을 잘못 계산하거나(반 줄 밀림),
+ * inline-block으로 스크립트별 span을 나눠도 폰트별 글자 높이 차이까지는 못 잡는 등
+ * 시도할 때마다 다른 방식으로 깨졌다(전부 실기기 확인). fillText는 브라우저가 화면에
+ * 글자를 그릴 때 쓰는 것과 동일한 텍스트 셰이핑 엔진을 그대로 쓰므로, 화면에 정상
+ * 표시되는 다른 모든 텍스트와 마찬가지로 애초에 이런 문제가 생기지 않는다.
+ */
+function drawTitleCanvas(titleText: string): HTMLCanvasElement {
+  const scale = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = CAPTURE_WINDOW_WIDTH_PX * scale;
+  canvas.height = TITLE_CANVAS_HEIGHT_PX * scale;
+  const ctx = canvas.getContext("2d")!;
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, CAPTURE_WINDOW_WIDTH_PX, TITLE_CANVAS_HEIGHT_PX);
+  ctx.fillStyle = "#0a0a0a"; // globals.css --foreground(라이트 모드) 근사값 — PDF는 항상 흰 배경이라 고정
+  ctx.font = `700 ${TITLE_FONT_SIZE_PX}px ${TITLE_FONT_FAMILY}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(titleText, CAPTURE_WINDOW_WIDTH_PX / 2, TITLE_CANVAS_HEIGHT_PX / 2);
+  return canvas;
 }
 
-/** 서로 떨어져 있는 여러 블록(예: 요약 카드 + 알아두면 좋은 정보 + 일자별 순서도)을 각각
- *  따로 캡처한 뒤 세로로 이어 붙여, 한 페이지에 함께 들어갈 하나의 이미지로 합칩니다. */
-async function captureStacked(
-  html2canvas: typeof import("html2canvas-pro").default,
-  elements: HTMLElement[]
-): Promise<HTMLCanvasElement> {
-  const canvases = await Promise.all(
-    elements.map((el) =>
-      html2canvas(el, { scale: 2, backgroundColor: "#ffffff", windowWidth: CAPTURE_WINDOW_WIDTH_PX })
-    )
-  );
+/** 캔버스 여러 장을 세로로 이어 붙여 한 페이지에 들어갈 하나의 이미지로 합칩니다. */
+function stackCanvases(canvases: HTMLCanvasElement[]): HTMLCanvasElement {
   if (canvases.length === 1) return canvases[0];
 
   const gapPx = Math.round(SECTION_GAP_MM * (canvases[0].width / CONTENT_WIDTH_MM));
@@ -117,6 +99,20 @@ async function captureStacked(
   return composite;
 }
 
+/** 서로 떨어져 있는 여러 블록(예: 요약 카드 + 알아두면 좋은 정보 + 일자별 순서도)을 각각
+ *  따로 캡처한 뒤 세로로 이어 붙입니다. */
+async function captureStacked(
+  html2canvas: typeof import("html2canvas-pro").default,
+  elements: HTMLElement[]
+): Promise<HTMLCanvasElement> {
+  const canvases = await Promise.all(
+    elements.map((el) =>
+      html2canvas(el, { scale: 2, backgroundColor: "#ffffff", windowWidth: CAPTURE_WINDOW_WIDTH_PX })
+    )
+  );
+  return stackCanvases(canvases);
+}
+
 async function capturePageCanvases(targetId: string, titleText: string): Promise<HTMLCanvasElement[] | null> {
   const container = document.getElementById(targetId);
   if (!container) return null;
@@ -135,23 +131,22 @@ async function capturePageCanvases(targetId: string, titleText: string): Promise
   // 상태를 건드리지 않아 화면 깜빡임이 없다.
   container.classList.add("pdf-capturing");
 
-  const titleEl = createOffscreenTitleElement(titleText);
-  document.body.appendChild(titleEl);
-
   try {
-    const pageGroups: HTMLElement[][] = [[titleEl, ...summaryEls], ...dayEls.map((el) => [el])];
+    const pageGroups: HTMLElement[][] = [summaryEls, ...dayEls.map((el) => [el])];
     if (pageGroups.length === 0) return null;
     // 안내 문구(data-pdf-section)는 그 자체로 새 페이지를 차지하면 마지막 한 줄 때문에 페이지가
     // 하나 더 늘어나므로, 마지막 페이지(보통 마지막 날짜)의 내용 아래에 이어 붙인다.
     pageGroups[pageGroups.length - 1].push(...trailingEls);
 
     const canvases: HTMLCanvasElement[] = [];
-    for (const group of pageGroups) {
-      canvases.push(await captureStacked(html2canvas, group));
+    for (let i = 0; i < pageGroups.length; i++) {
+      const group = pageGroups[i];
+      const captured = group.length > 0 ? [await captureStacked(html2canvas, group)] : [];
+      // 1페이지 맨 위에만 제목을 붙인다(html2canvas가 아닌 fillText로 직접 그린 캔버스).
+      canvases.push(i === 0 ? stackCanvases([drawTitleCanvas(titleText), ...captured]) : captured[0]);
     }
     return canvases;
   } finally {
-    titleEl.remove();
     container.classList.remove("pdf-capturing");
   }
 }
