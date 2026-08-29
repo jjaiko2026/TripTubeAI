@@ -15,7 +15,7 @@ export function SiteFooter() {
         </div>
       </div>
       <p className="border-t px-4 py-4 text-center text-xs text-muted-foreground sm:px-6">
-        © 2026 TripTube AI. 본 데모는 목업 데이터를 기반으로 동작합니다.
+        © 2026 TripTube AI.
       </p>
     </footer>
   );
