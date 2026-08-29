@@ -47,9 +47,16 @@ function createOffscreenTitleElement(titleText: string): HTMLElement {
   el.style.left = "0";
   el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
   el.className = "text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl";
-  // 숫자/영문("TripTubeAI", "5월", "3박 4일" 등)이 한글과 한 텍스트 노드 안에서 섞이면
+  // 앱 전체에 적용된 Geist(라틴 전용)로 "TripTubeAI"/숫자를 그리고 한글만 시스템 폰트로
+  // 그려지면, 두 폰트의 Bold 두께·글자 높이가 서로 달라 같은 font-size라도 "TripTubeAI"가
+  // 더 크고 두껍게 보인다(실기기 확인). 이 제목만 한글·숫자·영문을 전부 포함하는 시스템
+  // 한글 폰트 하나로 강제해 폰트가 섞이지 않게 한다(플랫폼마다 이름이 달라 여러 개를
+  // 순서대로 나열 — 각 OS에서 앞쪽에 있는 것부터 있는 걸 쓴다).
+  el.style.fontFamily =
+    '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif';
+  // 그와 별개로, 숫자/영문("5월", "3박 4일" 등)이 한글과 한 텍스트 노드 안에서 섞이면
   // html2canvas 기본 canvas 렌더러가 베이스라인을 잘못 계산해 그 부분만 반 줄 아래로
-  // 밀리는 알려진 문제가 있다(폰트를 통일해도 재현됨 — 실기기 확인). foreignObjectRendering
+  // 밀리는 알려진 문제가 있다(같은 폰트를 써도 재현 — 실기기 확인). foreignObjectRendering
   // 으로 전환해봤지만 실기기에서 아예 렌더링이 안 돼(제목 전체가 사라짐) 되돌렸다. 대신
   // 공백 없는 "단어" 안에서만 한글/그외(숫자·영문·기호) 구간을 별도 inline-block span으로
   // 쪼갠다 — 한 span 안에는 한 스크립트만 있어 html2canvas가 섞어서 그릴 일이 없고, 각
