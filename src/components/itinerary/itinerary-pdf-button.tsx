@@ -47,10 +47,13 @@ function createOffscreenTitleElement(titleText: string): HTMLElement {
   el.style.top = "-10000px";
   el.style.left = "0";
   el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
-  // 한글은 시스템 폰트로, 숫자/영문(Geist)은 다른 폰트로 렌더링돼 스크립트가 섞이면
-  // html2canvas가 줄 안에서 세로 위치를 다르게 잡는 경우가 있다(실기기에서 숫자만 반 줄
-  // 아래로 밀리고 위쪽이 잘리는 현상 확인). line-height/여백을 넉넉히 둬서 어떤 폰트로
-  // 그려지든 잘리지 않게 여유 공간을 준다.
+  // 앱 전체에 적용된 Geist(라틴 전용)가 숫자/영문을 먼저 채가고 한글만 시스템 폰트로
+  // 떨어지면서, 한 줄 안에 두 폰트가 섞여 html2canvas가 세로 위치를 다르게 잡았다(실기기에서
+  // 숫자만 반 줄 아래로 밀리고 위쪽이 잘리는 현상 확인). 이 제목만 한글·숫자·영문을 전부
+  // 포함하는 시스템 한글 폰트 하나로 강제해 폰트가 섞이지 않게 한다(플랫폼마다 이름이 달라
+  // 여러 개를 순서대로 나열 — 각 OS에서 앞쪽에 있는 것부터 있는 걸 쓴다).
+  el.style.fontFamily =
+    '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif';
   el.style.lineHeight = "1.6";
   el.style.paddingTop = "0.4em";
   el.style.paddingBottom = "0.2em";
