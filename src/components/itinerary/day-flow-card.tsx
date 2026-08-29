@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { colorForDay } from "@/lib/day-colors";
 import type { ItineraryDay } from "@/lib/types";
 
-const ROW_SIZE = 5;
 const MAX_LABEL_LENGTH = 10;
 
 /** shortLabel이 생기기 전에 저장된 예전 일정용 대체 로직. day.label(AI가 쓴 한 문장 요약)의
@@ -14,19 +13,15 @@ function legacyShortLabel(label: string): string {
   return firstSegment.length > MAX_LABEL_LENGTH ? firstSegment.slice(0, MAX_LABEL_LENGTH) : firstSegment;
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += size) rows.push(items.slice(i, i + size));
-  return rows;
-}
-
-/** 일자별 메인 타이틀만 카드형 순서도(1일차 → 2일차 → ...)로 보여줍니다. 한 줄에 최대
- *  5일차씩 담되, 한 줄에 든 일차 수가 5보다 적어도(예: 3일 여행) 좌우 끝까지 균등한
- *  간격으로 퍼지도록 배치합니다. 박스 크기는 내용 길이와 무관하게 모두 동일합니다.
- *  PDF 1페이지에 함께 담기도록 data-pdf-page="summary"로 표시합니다(itinerary-pdf-button.tsx). */
+/** 일자별 메인 타이틀만 카드형 순서도(1일차 → 2일차 → ...)로 보여줍니다. 예전엔 5개씩 고정
+ *  줄바꿈이었는데, 모바일 화면 폭에서는 5개는커녕 4일차부터 이미 화면 밖으로 넘쳐 보이지
+ *  않는 문제가 있었다. 화면 폭에 맞게 CSS가 알아서 줄바꿈하도록(flex-wrap) 바꿔, 몇 일차든
+ *  화면 폭만큼 담고 자연스럽게 다음 줄로 넘어가게 한다. 박스와 화살표를 한 단위로 묶어야
+ *  줄바꿈 지점에서 화살표가 엉뚱한 줄에 혼자 남지 않는다. 박스 크기는 내용 길이와 무관하게
+ *  모두 동일합니다. PDF 1페이지에 함께 담기도록 data-pdf-page="summary"로 표시합니다
+ *  (itinerary-pdf-button.tsx). */
 export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
   if (days.length === 0) return null;
-  const rows = chunk(days, ROW_SIZE);
 
   return (
     <Card data-pdf-page="summary" className="border shadow-md">
@@ -37,31 +32,26 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {rows.map((row, rowIdx) => (
-            <div key={rowIdx} className="flex items-center justify-between">
-              {row.map((day, idx) => {
-                const dayColor = colorForDay(day.day);
-                return (
-                  <Fragment key={day.day}>
-                    <a
-                      href={`#day-${day.day}`}
-                      className="flex h-16 w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-colors hover:bg-muted/40"
-                      style={{ borderColor: dayColor }}
-                    >
-                      <span className="text-sm font-bold">{day.day}일차</span>
-                      <span className="w-full truncate text-xs text-muted-foreground">
-                        {day.shortLabel || legacyShortLabel(day.label)}
-                      </span>
-                    </a>
-                    {idx < row.length - 1 && (
-                      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                    )}
-                  </Fragment>
-                );
-              })}
-            </div>
-          ))}
+        <div className="flex flex-wrap items-center gap-y-3">
+          {days.map((day, idx) => {
+            const dayColor = colorForDay(day.day);
+            const isLast = idx === days.length - 1;
+            return (
+              <Fragment key={day.day}>
+                <a
+                  href={`#day-${day.day}`}
+                  className="flex h-16 w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-colors hover:bg-muted/40"
+                  style={{ borderColor: dayColor }}
+                >
+                  <span className="text-sm font-bold">{day.day}일차</span>
+                  <span className="w-full truncate text-xs text-muted-foreground">
+                    {day.shortLabel || legacyShortLabel(day.label)}
+                  </span>
+                </a>
+                {!isLast && <ChevronRight className="mx-1 h-5 w-5 shrink-0 text-muted-foreground" />}
+              </Fragment>
+            );
+          })}
         </div>
       </CardContent>
     </Card>

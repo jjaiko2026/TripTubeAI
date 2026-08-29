@@ -56,21 +56,25 @@ export default async function PlanResultPage({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      <div className="mb-6 flex items-center justify-between">
-        <Button render={<Link href={`/plan/new?editFrom=${id}`} />} variant="ghost" size="sm">
-          <ArrowLeft className="h-4 w-4" /> 조건 다시 입력
-        </Button>
-        <div className="flex items-center gap-2">
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <ShareItineraryButton title={pdfTitle} />
           <ItineraryPdfButton
             targetId="itinerary-printable"
             fileName={`${itinerary.destinationName}_여행일정.pdf`}
             title={pdfTitle}
           />
-          <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
-            <RefreshCcw className="h-4 w-4" /> 새 일정 만들기
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button render={<Link href={`/plan/new?editFrom=${id}`} />} variant="ghost" size="sm">
+            <ArrowLeft className="h-4 w-4" /> 조건 다시 입력
           </Button>
-          {canManage && <DeleteItineraryButton id={id} redirectTo="/plan/mine" />}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button render={<Link href="/plan/new" />} variant="outline" size="sm">
+              <RefreshCcw className="h-4 w-4" /> 새 일정 만들기
+            </Button>
+            {canManage && <DeleteItineraryButton id={id} redirectTo="/plan/mine" />}
+          </div>
         </div>
       </div>
 
