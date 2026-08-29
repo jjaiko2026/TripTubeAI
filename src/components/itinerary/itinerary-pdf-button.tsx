@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Download, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -85,7 +85,7 @@ async function captureStacked(
   return composite;
 }
 
-async function generatePdfBlob(targetId: string, titleText: string): Promise<Blob | null> {
+async function capturePageCanvases(targetId: string, titleText: string): Promise<HTMLCanvasElement[] | null> {
   const container = document.getElementById(targetId);
   if (!container) return null;
 
@@ -96,10 +96,7 @@ async function generatePdfBlob(targetId: string, titleText: string): Promise<Blo
   const dayEls = Array.from(container.querySelectorAll<HTMLElement>("[data-pdf-day]"));
   const trailingEls = Array.from(container.querySelectorAll<HTMLElement>("[data-pdf-section]"));
 
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import("html2canvas-pro"),
-    import("jspdf"),
-  ]);
+  const { default: html2canvas } = await import("html2canvas-pro");
 
   // 일차 카드가 접혀 있어도(itinerary-days-list.tsx의 <details>) PDF에는 전체가 나와야 한다.
   // .pdf-capturing 클래스가 붙는 동안 CSS가 접힌 내용을 강제로 펼친다(globals.css). React
@@ -117,19 +114,25 @@ async function generatePdfBlob(targetId: string, titleText: string): Promise<Blo
     ];
     if (pageGroups.length === 0) return null;
 
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-
-    for (let i = 0; i < pageGroups.length; i++) {
-      const canvas = await captureStacked(html2canvas, pageGroups[i]);
-      if (i > 0) pdf.addPage();
-      drawFittedToPage(pdf, canvas);
+    const canvases: HTMLCanvasElement[] = [];
+    for (const group of pageGroups) {
+      canvases.push(await captureStacked(html2canvas, group));
     }
-
-    return pdf.output("blob");
+    return canvases;
   } finally {
     titleEl.remove();
     container.classList.remove("pdf-capturing");
   }
+}
+
+async function buildPdfBlob(canvases: HTMLCanvasElement[]): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  canvases.forEach((canvas, i) => {
+    if (i > 0) pdf.addPage();
+    drawFittedToPage(pdf, canvas);
+  });
+  return pdf.output("blob");
 }
 
 export function ItineraryPdfButton({
@@ -142,30 +145,25 @@ export function ItineraryPdfButton({
   title: string;
 }) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const previewUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    previewUrlRef.current = previewUrl;
-  }, [previewUrl]);
-
-  // 언마운트 시에도 마지막으로 만든 미리보기 URL을 정리합니다.
-  useEffect(() => () => {
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-  }, []);
+  // 모바일 브라우저(특히 iOS Safari)는 <iframe>에 blob: URL로 넣은 PDF를 렌더링하지
+  // 못하는 경우가 많아, 미리보기는 캡처한 각 페이지 캔버스를 이미지로 직접 보여준다.
+  // 실제 PDF 파일은 다운로드할 때만 만든다.
+  const [previewPages, setPreviewPages] = useState<string[] | null>(null);
+  const canvasesRef = useRef<HTMLCanvasElement[] | null>(null);
 
   async function handlePreview() {
     setIsGenerating(true);
     setError(false);
     try {
-      const blob = await generatePdfBlob(targetId, title);
-      if (!blob) {
+      const canvases = await capturePageCanvases(targetId, title);
+      if (!canvases) {
         setError(true);
         return;
       }
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-      setPreviewUrl(URL.createObjectURL(blob));
+      canvasesRef.current = canvases;
+      setPreviewPages(canvases.map((canvas) => canvas.toDataURL("image/png")));
     } catch {
       setError(true);
     } finally {
@@ -174,16 +172,26 @@ export function ItineraryPdfButton({
   }
 
   function closePreview() {
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    setPreviewUrl(null);
+    canvasesRef.current = null;
+    setPreviewPages(null);
   }
 
-  function handleDownload() {
-    if (!previewUrl) return;
-    const a = document.createElement("a");
-    a.href = previewUrl;
-    a.download = fileName;
-    a.click();
+  async function handleDownload() {
+    if (!canvasesRef.current) return;
+    setIsDownloading(true);
+    try {
+      const blob = await buildPdfBlob(canvasesRef.current);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError(true);
+    } finally {
+      setIsDownloading(false);
+    }
   }
 
   return (
@@ -196,20 +204,26 @@ export function ItineraryPdfButton({
         </Button>
       </div>
 
-      <Dialog open={previewUrl !== null} onOpenChange={(open) => !open && closePreview()}>
+      <Dialog open={previewPages !== null} onOpenChange={(open) => !open && closePreview()}>
         <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>PDF 미리보기</DialogTitle>
           </DialogHeader>
-          {previewUrl && (
-            <iframe src={previewUrl} title="일정 PDF 미리보기" className="h-[70vh] w-full rounded-md border" />
+          {previewPages && (
+            <div className="flex h-[70vh] flex-col gap-3 overflow-y-auto rounded-md border bg-muted/30 p-2">
+              {previewPages.map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={src} alt={`PDF ${i + 1}페이지`} className="w-full rounded-sm border bg-white" />
+              ))}
+            </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={closePreview}>
               닫기
             </Button>
-            <Button onClick={handleDownload}>
-              <Download className="h-4 w-4" /> 다운로드
+            <Button onClick={handleDownload} disabled={isDownloading}>
+              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              다운로드
             </Button>
           </DialogFooter>
         </DialogContent>
