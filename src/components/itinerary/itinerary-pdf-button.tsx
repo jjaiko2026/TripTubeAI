@@ -227,8 +227,10 @@ export function ItineraryPdfButton({
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
-                카카오톡 등 인앱 브라우저에서는 다운로드가 실패할 수 있어요. 우측 상단 메뉴에서
-                &apos;다른 브라우저로 열기&apos;를 선택한 뒤 다시 시도해 주세요.
+                카카오톡·네이버 등 앱 안에서는 다운로드가 실패할 수 있어요. &apos;다른 브라우저로
+                열기&apos;는 휴대폰 기본 브라우저로 연결돼 안 될 수 있으니, 대신 <strong>&apos;링크
+                복사&apos;</strong>를 누른 뒤 <strong>크롬 또는 삼성 인터넷</strong> 앱을 직접 열어
+                주소창에 붙여넣기 해서 다시 시도해 주세요.
               </p>
             </div>
           )}
