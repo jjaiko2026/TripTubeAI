@@ -85,7 +85,14 @@ const TOUR_API_CATEGORY_LABELS: Record<string, string> = {
   A0502: "음식점",
 };
 
-type PlanItem = { time: string; title: string; description: string; tags: PurposeId[]; geocodeQuery: string };
+type PlanItem = {
+  time: string;
+  title: string;
+  description: string;
+  tags: PurposeId[];
+  geocodeQuery: string;
+  priceHint?: string;
+};
 type PlanDay = { day: number; label: string; shortLabel: string; items: PlanItem[] };
 
 function requestSeedKey(request: TripRequest) {
@@ -141,6 +148,15 @@ const dayItemSchema = z.object({
         "해외 장소는, 지도 서비스가 실제로 찾을 수 있는 현지어 또는 영문 이름으로 쓰세요 " +
         "(예: '톈즈팡' → 'Tianzifang', '우캉루' → 'Wukang Road'). 국내이거나 title이 이미 " +
         "지도에서 바로 찾힐 만한 정확한 상호/지명이면 title과 동일하게 써도 됩니다."
+    ),
+  priceHint: z
+    .string()
+    .optional()
+    .describe(
+      "식사/맛집 항목이면 대표 메뉴의 1인 예상 가격(예: '1인 12,000원~'), 유료 관광지면 대략적인 " +
+        "입장료(예: '입장료 5,000원')를 아주 짧게. 확신 있게 추정할 수 있을 때만 채우고, 모르면 " +
+        "숫자를 지어내지 말고 필드 자체를 비우세요(undefined). 실제 이동/숙소/무료 명소처럼 가격이 " +
+        "의미 없는 항목에도 비워두세요."
     ),
 });
 
@@ -354,10 +370,16 @@ async function generateItineraryWithAI(
           : "각 항목의 geocodeQuery는 국내라면 보통 title과 동일하게 쓰면 됩니다.",
         "같은 날 안에서는 지리적으로 자연스러운 한 방향 동선이 되도록 항목을 배치하세요 " +
           "(예: 서쪽에서 동쪽으로 순서대로 이동). 하루 안에서 지역을 여러 번 왔다갔다 하지 마세요.",
+        "식사/맛집 항목이나 입장료가 있는 관광지는 priceHint에 대략적인 1인 예상 가격을 짧게 " +
+          "적으세요(예: '1인 12,000원~', '입장료 5,000원'). 확신 없는 가격은 지어내지 말고 " +
+          "비워두세요 — 이동/숙소/무료 명소도 비워둡니다.",
         days > 1
           ? "마지막 날을 제외한 각 날짜의 마지막 항목은 그날 마지막 활동 근처에서 묵을 숙소여야 " +
             "합니다. title에 구체적인 지역명을 포함하세요 (예: '협재 인근 오션뷰 숙소'). " +
-            "다음 날 첫 항목은 반드시 이 숙소와 가까운 지역에서 시작해야 합니다."
+            "다음 날 첫 항목은 반드시 이 숙소와 가까운 지역에서 시작해야 합니다. 숙소 종류는 " +
+            "request.memberType/memberCount에 맞게 고르세요 — 아이를 동반한 가족 단위라면 " +
+            "게스트하우스·도미토리 같은 공용/배낭여행형 숙소는 추천하지 말고 패밀리룸이 있는 " +
+            "호텔·리조트·펜션을 추천하고, 혼자 여행이면 게스트하우스도 괜찮습니다."
           : null,
       ].filter((v): v is string => v !== null),
       activityCatalog,
@@ -1457,12 +1479,16 @@ async function regenerateSingleDay(
         `${dayNumber}일차 하루 일정만 userInstruction에 따라 다시 작성하세요. userInstruction이 최우선입니다.`,
         "otherDays.places에 이미 있는 장소는 다시 넣지 마세요(같은 곳 중복 방문 금지). userInstruction이 명시적으로 요구하면 예외.",
         "하루 3~5개 항목을 시간 순으로 배치하세요 (time 형식 HH:MM). 같은 날 안에서는 지리적으로 한 방향 동선이 되게 하세요.",
+        "식사/맛집 항목이나 입장료가 있는 관광지는 priceHint에 대략적인 1인 예상 가격을 짧게 적으세요(예: '1인 12,000원~'). " +
+          "확신 없는 가격은 지어내지 말고 비워두세요.",
         keepUnlessRemoved.length > 0
           ? "keepTheseUnlessInstructionRemovesThem의 장소는 userInstruction이 빼라고 하지 않는 한 title을 그대로 유지하세요."
           : null,
         prevDay ? "previousDayLastStop(전날 마지막 지점, 보통 숙소) 근처에서 이 날을 시작하세요." : null,
         nextDay
-          ? "이 날의 마지막 항목은 nextDayFirstStop(다음날 시작 지점)과 가까운 지역의 숙소여야 합니다. title에 구체적인 지역명을 포함하세요."
+          ? "이 날의 마지막 항목은 nextDayFirstStop(다음날 시작 지점)과 가까운 지역의 숙소여야 합니다. title에 구체적인 지역명을 포함하세요. " +
+            "숙소 종류는 request.memberType/memberCount에 맞게 고르세요 — 아이를 동반한 가족 단위라면 게스트하우스·도미토리 대신 " +
+            "패밀리룸이 있는 호텔·리조트·펜션을 추천하세요."
           : null,
         isFirstDay
           ? `이 날은 여행 첫날입니다. 첫 항목은 반드시 ${destination.name}의 ${arrivalWord}여야 합니다(아는 정확한 공항/터미널명을 쓰세요). ` +

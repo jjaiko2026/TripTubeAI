@@ -44,7 +44,7 @@ const PROBLEMS = [
 
 const STEPS = [
   { icon: ListChecks, title: "여행 조건 입력", desc: "여행지·인원·기간·시기·목적을 알려주세요" },
-  { icon: Wand2, title: "AI가 자료 분석", desc: "최근 1년 유튜브·블로그를 찾아 핵심만 정리해요" },
+  { icon: Wand2, title: "AI가 자료 분석", desc: "최근 2년 유튜브·블로그를 찾아 핵심만 정리해요" },
   { icon: MapPin, title: "일정 자동 구성", desc: "일자별 동선과 추천 코스로 완성돼요" },
   { icon: Link2, title: "출처까지 확인", desc: "참고한 영상·블로그 링크를 그대로 확인해요" },
 ];
