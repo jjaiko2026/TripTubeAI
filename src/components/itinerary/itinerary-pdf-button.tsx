@@ -194,14 +194,14 @@ async function blobToBase64(blob: Blob): Promise<string> {
  * 가로채므로(표준 동작) 현재 페이지에 그대로 머문다.
  *
  * <input type="file">에 DataTransfer로 파일을 채워 넣는 방식은, 파일 크기와 무관하게(1박2일
- * 짧은 일정도 동일) 카카오톡에서 "네트워크 연결이 원활하지 않습니다"로 실패했다 — 카카오톡
- * 인앱 브라우저가 파일 입력 기반 제출 자체를 막는 것으로 보인다. 대신 PDF를 base64 텍스트로
- * 바꿔 평범한 hidden 필드로 보낸다 — 파일 입력을 전혀 쓰지 않는 가장 기본적인 폼 제출이라
- * 막힐 이유가 없다.
+ * 짧은 일정도 동일) 카카오톡에서 "네트워크 연결이 원활하지 않습니다"로 실패했다. base64
+ * 텍스트를 평범한 hidden 필드로 바꿔도 여전히 같은 크기 무관 실패가 재현됐는데 — 원인은
+ * 파일 형식이 아니라, 버튼 클릭과 이 제출 사이에 낀 비동기 PDF 생성 때문에 "진짜 사용자
+ * 동작" 시점에서 너무 멀어져 카카오톡이 제출 자체를 막는 것으로 보인다. 그래서 이 함수는
+ * fileBase64를 인자로 미리 받아 async 작업 없이 동기적으로만 동작한다 — 호출부(클릭
+ * 핸들러)가 await 없이 바로 부를 수 있어야 클릭 시점에 최대한 가깝게 제출된다.
  */
-async function downloadViaServerRoundTrip(blob: Blob, fileName: string) {
-  const fileBase64 = await blobToBase64(blob);
-
+function submitDownloadForm(fileBase64: string, fileName: string) {
   const form = document.createElement("form");
   form.method = "POST";
   form.action = "/api/pdf-download";
@@ -240,7 +240,12 @@ export function ItineraryPdfButton({
   // 못하는 경우가 많아, 미리보기는 캡처한 각 페이지 캔버스를 이미지로 직접 보여준다.
   // 실제 PDF 파일은 다운로드할 때만 만든다.
   const [previewPages, setPreviewPages] = useState<string[] | null>(null);
-  const canvasesRef = useRef<HTMLCanvasElement[] | null>(null);
+  // 다운로드 버튼 클릭과 실제 form.submit() 사이에 비동기 작업(PDF 생성)이 끼면, 클릭이라는
+  // "진짜 사용자 동작" 시점에서 너무 멀어져 카카오톡 인앱 브라우저가 제출을 막는 것으로
+  // 보인다(파일 입력이든 base64 텍스트든 방식과 무관하게 실기기에서 재현됨). 그래서 무거운
+  // 작업(캡처+PDF 인코딩)은 미리보기를 여는 시점에 전부 끝내 두고, 다운로드 버튼은 클릭 즉시
+  // (await 없이) form.submit()만 하도록 분리한다.
+  const pdfBase64Ref = useRef<string | null>(null);
 
   async function handlePreview() {
     setIsGenerating(true);
@@ -251,7 +256,8 @@ export function ItineraryPdfButton({
         setError(true);
         return;
       }
-      canvasesRef.current = canvases;
+      const blob = await buildPdfBlob(canvases);
+      pdfBase64Ref.current = await blobToBase64(blob);
       setPreviewPages(canvases.map((canvas) => canvas.toDataURL("image/jpeg", 0.85)));
     } catch {
       setError(true);
@@ -261,16 +267,15 @@ export function ItineraryPdfButton({
   }
 
   function closePreview() {
-    canvasesRef.current = null;
+    pdfBase64Ref.current = null;
     setPreviewPages(null);
   }
 
-  async function handleDownload() {
-    if (!canvasesRef.current) return;
+  function handleDownload() {
+    if (!pdfBase64Ref.current) return;
     setIsDownloading(true);
     try {
-      const blob = await buildPdfBlob(canvasesRef.current);
-      await downloadViaServerRoundTrip(blob, fileName);
+      submitDownloadForm(pdfBase64Ref.current, fileName);
     } catch {
       setError(true);
     } finally {
