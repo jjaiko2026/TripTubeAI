@@ -47,16 +47,11 @@ function createOffscreenTitleElement(titleText: string): HTMLElement {
   el.style.top = "-10000px";
   el.style.left = "0";
   el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
-  // 앱 전체에 적용된 Geist(라틴 전용)가 숫자/영문을 먼저 채가고 한글만 시스템 폰트로
-  // 떨어지면서, 한 줄 안에 두 폰트가 섞여 html2canvas가 세로 위치를 다르게 잡았다(실기기에서
-  // 숫자만 반 줄 아래로 밀리고 위쪽이 잘리는 현상 확인). 이 제목만 한글·숫자·영문을 전부
-  // 포함하는 시스템 한글 폰트 하나로 강제해 폰트가 섞이지 않게 한다(플랫폼마다 이름이 달라
-  // 여러 개를 순서대로 나열 — 각 OS에서 앞쪽에 있는 것부터 있는 걸 쓴다).
-  el.style.fontFamily =
-    '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", sans-serif';
-  el.style.lineHeight = "1.6";
-  el.style.paddingTop = "0.4em";
-  el.style.paddingBottom = "0.2em";
+  // 숫자/영문("TripTubeAI", "5월", "3박 4일" 등)이 한글과 한 줄에 섞이면 html2canvas 기본
+  // canvas 렌더러가 베이스라인을 잘못 계산해 그 부분만 반 줄 아래로 밀리는 알려진 문제가
+  // 있다(폰트를 통일해도 재현됨 — 실기기 확인). captureStacked()가 이 표시를 보고 이
+  // 요소만 브라우저 자체 렌더러(foreignObjectRendering)로 그린다.
+  el.dataset.pdfMixedScript = "true";
   el.className = "text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl";
   return el;
 }
@@ -69,7 +64,12 @@ async function captureStacked(
 ): Promise<HTMLCanvasElement> {
   const canvases = await Promise.all(
     elements.map((el) =>
-      html2canvas(el, { scale: 2, backgroundColor: "#ffffff", windowWidth: CAPTURE_WINDOW_WIDTH_PX })
+      html2canvas(el, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        windowWidth: CAPTURE_WINDOW_WIDTH_PX,
+        foreignObjectRendering: el.dataset.pdfMixedScript === "true",
+      })
     )
   );
   if (canvases.length === 1) return canvases[0];
