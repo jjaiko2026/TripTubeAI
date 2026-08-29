@@ -1,17 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Eye, Loader2, TriangleAlert } from "lucide-react";
+import { Download, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-
-/** 카카오톡/인스타그램/네이버 등 인앱 브라우저(안드로이드 WebView)는 blob: URL을 시스템
- *  다운로드 매니저로 못 넘겨 "다운로드 중"만 뜨고 파일이 실제로 저장되지 않는다 — 자체
- *  구현으로 고칠 수 없는 WebView 제약이라, 감지해서 외부 브라우저 안내만 보여준다. */
-function isInAppBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /KAKAOTALK|Instagram|FBAN|FBAV|NAVER\(inapp|Line\//i.test(navigator.userAgent);
-}
 
 const PAGE_WIDTH_MM = 210;
 const PAGE_HEIGHT_MM = 297;
@@ -142,6 +134,49 @@ async function buildPdfBlob(canvases: HTMLCanvasElement[]): Promise<Blob> {
   return pdf.output("blob");
 }
 
+/**
+ * blob: URL을 <a download>로 저장하는 방식은 안드로이드 WebView 기반 인앱 브라우저
+ * (카카오톡/네이버 앱 등)에서 조용히 실패한다 — 그 WebView들의 다운로드 매니저가 blob: URL을
+ * 못 읽기 때문이다(실기기 확인됨). 대신 PDF를 /api/pdf-download로 그대로 왕복시켜 진짜
+ * Content-Disposition 응답으로 돌려받으면 어떤 브라우저/WebView에서도 정상 처리된다.
+ * 보이는 페이지가 이동하면 안 되므로 숨겨진 iframe을 제출 대상으로 쓴다.
+ */
+function downloadViaServerRoundTrip(blob: Blob, fileName: string) {
+  const iframeName = `pdf-download-${Date.now()}`;
+  const iframe = document.createElement("iframe");
+  iframe.name = iframeName;
+  iframe.style.display = "none";
+  document.body.appendChild(iframe);
+
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "/api/pdf-download";
+  form.target = iframeName;
+  form.enctype = "multipart/form-data";
+  form.style.display = "none";
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.name = "file";
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(new File([blob], fileName, { type: "application/pdf" }));
+  fileInput.files = dataTransfer.files;
+  form.appendChild(fileInput);
+
+  const filenameInput = document.createElement("input");
+  filenameInput.type = "hidden";
+  filenameInput.name = "filename";
+  filenameInput.value = fileName;
+  form.appendChild(filenameInput);
+
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(() => {
+    form.remove();
+    iframe.remove();
+  }, 5000);
+}
+
 export function ItineraryPdfButton({
   targetId,
   fileName,
@@ -159,9 +194,6 @@ export function ItineraryPdfButton({
   // 실제 PDF 파일은 다운로드할 때만 만든다.
   const [previewPages, setPreviewPages] = useState<string[] | null>(null);
   const canvasesRef = useRef<HTMLCanvasElement[] | null>(null);
-  // previewPages는 클릭 이후에만 채워지므로(=서버 렌더 시점엔 항상 null), 이 값을 쓰는
-  // Dialog 내용은 SSR에는 아예 그려지지 않아 hydration mismatch 걱정 없이 바로 호출해도 된다.
-  const isInApp = isInAppBrowser();
 
   async function handlePreview() {
     setIsGenerating(true);
@@ -191,16 +223,7 @@ export function ItineraryPdfButton({
     setIsDownloading(true);
     try {
       const blob = await buildPdfBlob(canvasesRef.current);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      // iOS Safari 등 일부 모바일 브라우저는 DOM에 붙지 않은 <a>의 click()을 무시하고,
-      // click() 직후 바로 revoke하면 다운로드가 시작되기 전에 blob이 무효화될 수 있다.
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadViaServerRoundTrip(blob, fileName);
     } catch {
       setError(true);
     } finally {
@@ -223,17 +246,6 @@ export function ItineraryPdfButton({
           <DialogHeader>
             <DialogTitle>PDF 미리보기</DialogTitle>
           </DialogHeader>
-          {isInApp && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>
-                카카오톡·네이버 등 앱 안에서는 다운로드가 실패할 수 있어요. &apos;다른 브라우저로
-                열기&apos;는 휴대폰 기본 브라우저로 연결돼 안 될 수 있으니, 대신 <strong>&apos;링크
-                복사&apos;</strong>를 누른 뒤 <strong>크롬 또는 삼성 인터넷</strong> 앱을 직접 열어
-                주소창에 붙여넣기 해서 다시 시도해 주세요.
-              </p>
-            </div>
-          )}
           {previewPages && (
             <div className="flex h-[70vh] flex-col gap-3 overflow-y-auto rounded-md border bg-muted/30 p-2">
               {previewPages.map((src, i) => (
