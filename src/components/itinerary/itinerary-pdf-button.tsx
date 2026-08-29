@@ -41,18 +41,35 @@ function drawFittedToPage(pdf: import("jspdf").jsPDF, canvas: HTMLCanvasElement)
  *  html2canvas로 찍은 뒤 바로 제거합니다. */
 function createOffscreenTitleElement(titleText: string): HTMLElement {
   const el = document.createElement("h2");
-  el.textContent = titleText;
   el.setAttribute("aria-hidden", "true");
   el.style.position = "fixed";
   el.style.top = "-10000px";
   el.style.left = "0";
   el.style.width = `${CAPTURE_WINDOW_WIDTH_PX}px`;
-  // 숫자/영문("TripTubeAI", "5월", "3박 4일" 등)이 한글과 한 줄에 섞이면 html2canvas 기본
-  // canvas 렌더러가 베이스라인을 잘못 계산해 그 부분만 반 줄 아래로 밀리는 알려진 문제가
-  // 있다(폰트를 통일해도 재현됨 — 실기기 확인). captureStacked()가 이 표시를 보고 이
-  // 요소만 브라우저 자체 렌더러(foreignObjectRendering)로 그린다.
-  el.dataset.pdfMixedScript = "true";
   el.className = "text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl";
+  // 숫자/영문("TripTubeAI", "5월", "3박 4일" 등)이 한글과 한 텍스트 노드 안에서 섞이면
+  // html2canvas 기본 canvas 렌더러가 베이스라인을 잘못 계산해 그 부분만 반 줄 아래로
+  // 밀리는 알려진 문제가 있다(폰트를 통일해도 재현됨 — 실기기 확인). foreignObjectRendering
+  // 으로 전환해봤지만 실기기에서 아예 렌더링이 안 돼(제목 전체가 사라짐) 되돌렸다. 대신
+  // 공백 없는 "단어" 안에서만 한글/그외(숫자·영문·기호) 구간을 별도 inline-block span으로
+  // 쪼갠다 — 한 span 안에는 한 스크립트만 있어 html2canvas가 섞어서 그릴 일이 없고, 각
+  // span의 위치는 html2canvas가 이미 잘 처리하는 일반 박스 레이아웃으로 계산된다. 공백은
+  // span 안에 넣으면 가장자리 공백으로 처리돼 사라지므로(로컬 테스트로 확인한 실제 회귀),
+  // 항상 부모에 바로 붙는 일반 텍스트 노드로 남긴다.
+  for (const token of titleText.split(/(\s+)/)) {
+    if (token === "") continue;
+    if (/^\s+$/.test(token)) {
+      el.appendChild(document.createTextNode(token));
+      continue;
+    }
+    const scriptRuns = token.match(/[가-힣ㄱ-ㆎ]+|[^가-힣ㄱ-ㆎ]+/g) ?? [token];
+    for (const run of scriptRuns) {
+      const span = document.createElement("span");
+      span.style.display = "inline-block";
+      span.textContent = run;
+      el.appendChild(span);
+    }
+  }
   return el;
 }
 
@@ -64,12 +81,7 @@ async function captureStacked(
 ): Promise<HTMLCanvasElement> {
   const canvases = await Promise.all(
     elements.map((el) =>
-      html2canvas(el, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        windowWidth: CAPTURE_WINDOW_WIDTH_PX,
-        foreignObjectRendering: el.dataset.pdfMixedScript === "true",
-      })
+      html2canvas(el, { scale: 2, backgroundColor: "#ffffff", windowWidth: CAPTURE_WINDOW_WIDTH_PX })
     )
   );
   if (canvases.length === 1) return canvases[0];

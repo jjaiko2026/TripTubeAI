@@ -1,5 +1,4 @@
-import { Fragment } from "react";
-import { ChevronRight, Workflow } from "lucide-react";
+import { Workflow } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { colorForDay } from "@/lib/day-colors";
 import type { ItineraryDay } from "@/lib/types";
@@ -13,13 +12,15 @@ function legacyShortLabel(label: string): string {
   return firstSegment.length > MAX_LABEL_LENGTH ? firstSegment.slice(0, MAX_LABEL_LENGTH) : firstSegment;
 }
 
-/** 일자별 메인 타이틀만 카드형 순서도(1일차 → 2일차 → ...)로 보여줍니다. 예전엔 5개씩 고정
- *  줄바꿈이었는데, 모바일 화면 폭에서는 5개는커녕 4일차부터 이미 화면 밖으로 넘쳐 보이지
- *  않는 문제가 있었다. 화면 폭에 맞게 CSS가 알아서 줄바꿈하도록(flex-wrap) 바꿔, 몇 일차든
- *  화면 폭만큼 담고 자연스럽게 다음 줄로 넘어가게 한다. 박스와 화살표를 한 단위로 묶어야
- *  줄바꿈 지점에서 화살표가 엉뚱한 줄에 혼자 남지 않는다. 박스 크기는 내용 길이와 무관하게
- *  모두 동일합니다. PDF 1페이지에 함께 담기도록 data-pdf-page="summary"로 표시합니다
- *  (itinerary-pdf-button.tsx). */
+/** 일자별 메인 타이틀만 카드형 순서도(1일차, 2일차, ...)로 보여줍니다. 화살표로 잇는 flex
+ *  줄바꿈은 모바일에서 몇 개가 한 줄에 들어갈지 예측하기 어렵고(예전엔 5개 고정이라 화면 밖
+ *  으로 넘쳤고, flex-wrap로 바꾸자 이번엔 데스크톱에서 박스가 좌측에 작게 뭉쳐 보이는
+ *  문제가 생겼다), CSS Grid는 같은 폭 안에서 몇 개든 균등하게 채우고 자동으로 다음 줄로
+ *  넘어가므로 화면 폭과 무관하게 항상 같은 방식으로 반응한다 — 한 줄이 다 안 채워져도
+ *  (예: 3일 여행) 그 줄의 박스들이 폭 전체로 고르게 늘어난다. 화살표 커넥터는 줄바꿈 지점
+ *  마다 위치가 달라져 Grid와 함께 쓰기 까다로워 대신 일차 번호로 순서를 표현한다. 박스
+ *  크기는 내용 길이와 무관하게 모두 동일합니다. PDF 1페이지에 함께 담기도록
+ *  data-pdf-page="summary"로 표시합니다(itinerary-pdf-button.tsx). */
 export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
   if (days.length === 0) return null;
 
@@ -32,24 +33,21 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-wrap items-center gap-y-3">
-          {days.map((day, idx) => {
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(5rem,1fr))] gap-2">
+          {days.map((day) => {
             const dayColor = colorForDay(day.day);
-            const isLast = idx === days.length - 1;
             return (
-              <Fragment key={day.day}>
-                <a
-                  href={`#day-${day.day}`}
-                  className="flex h-16 w-20 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-colors hover:bg-muted/40"
-                  style={{ borderColor: dayColor }}
-                >
-                  <span className="text-sm font-bold">{day.day}일차</span>
-                  <span className="w-full truncate text-xs text-muted-foreground">
-                    {day.shortLabel || legacyShortLabel(day.label)}
-                  </span>
-                </a>
-                {!isLast && <ChevronRight className="mx-1 h-5 w-5 shrink-0 text-muted-foreground" />}
-              </Fragment>
+              <a
+                key={day.day}
+                href={`#day-${day.day}`}
+                className="flex h-16 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-colors hover:bg-muted/40"
+                style={{ borderColor: dayColor }}
+              >
+                <span className="text-sm font-bold">{day.day}일차</span>
+                <span className="w-full truncate text-xs text-muted-foreground">
+                  {day.shortLabel || legacyShortLabel(day.label)}
+                </span>
+              </a>
             );
           })}
         </div>
