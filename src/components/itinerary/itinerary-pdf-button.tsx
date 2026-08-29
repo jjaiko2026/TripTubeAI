@@ -1,9 +1,17 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Eye, Loader2 } from "lucide-react";
+import { Download, Eye, Loader2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+/** 카카오톡/인스타그램/네이버 등 인앱 브라우저(안드로이드 WebView)는 blob: URL을 시스템
+ *  다운로드 매니저로 못 넘겨 "다운로드 중"만 뜨고 파일이 실제로 저장되지 않는다 — 자체
+ *  구현으로 고칠 수 없는 WebView 제약이라, 감지해서 외부 브라우저 안내만 보여준다. */
+function isInAppBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /KAKAOTALK|Instagram|FBAN|FBAV|NAVER\(inapp|Line\//i.test(navigator.userAgent);
+}
 
 const PAGE_WIDTH_MM = 210;
 const PAGE_HEIGHT_MM = 297;
@@ -151,6 +159,9 @@ export function ItineraryPdfButton({
   // 실제 PDF 파일은 다운로드할 때만 만든다.
   const [previewPages, setPreviewPages] = useState<string[] | null>(null);
   const canvasesRef = useRef<HTMLCanvasElement[] | null>(null);
+  // previewPages는 클릭 이후에만 채워지므로(=서버 렌더 시점엔 항상 null), 이 값을 쓰는
+  // Dialog 내용은 SSR에는 아예 그려지지 않아 hydration mismatch 걱정 없이 바로 호출해도 된다.
+  const isInApp = isInAppBrowser();
 
   async function handlePreview() {
     setIsGenerating(true);
@@ -212,6 +223,15 @@ export function ItineraryPdfButton({
           <DialogHeader>
             <DialogTitle>PDF 미리보기</DialogTitle>
           </DialogHeader>
+          {isInApp && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                카카오톡 등 인앱 브라우저에서는 다운로드가 실패할 수 있어요. 우측 상단 메뉴에서
+                &apos;다른 브라우저로 열기&apos;를 선택한 뒤 다시 시도해 주세요.
+              </p>
+            </div>
+          )}
           {previewPages && (
             <div className="flex h-[70vh] flex-col gap-3 overflow-y-auto rounded-md border bg-muted/30 p-2">
               {previewPages.map((src, i) => (
