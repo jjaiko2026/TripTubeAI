@@ -5,6 +5,20 @@ import { Download, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
+/**
+ * PDF 다운로드는 모바일(특히 카카오톡/네이버 등 인앱 브라우저)에서 5가지 서로 다른 제출
+ * 방식(숨겨진 iframe → 파일 입력 → base64 hidden 필드 → 동기 제출)을 전부 시도해도 매번
+ * 3초 이상 대기 후 "네트워크 연결이 원활하지 않습니다"로 실패했다(와이파이·데이터 모두
+ * 동일, 파일 크기와도 무관) — 특정 제출 방식의 버그가 아니라 그 브라우저들이 큰 POST
+ * 요청 자체를 처리하지 못하는 구조적 한계로 보인다. 진짜 우회하려면 서버에 파일을 잠깐
+ * 저장해두고 GET으로 받는 방식(별도 저장소 연동)이 필요한데, 지금은 그 비용/복잡도 대신
+ * 모바일에서는 다운로드 버튼 자체를 감추고 미리보기만 제공하기로 했다(PC에서는 정상 동작).
+ */
+function isMobileDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 const PAGE_WIDTH_MM = 210;
 const PAGE_HEIGHT_MM = 297;
 const MARGIN_MM = 10;
@@ -240,11 +254,9 @@ export function ItineraryPdfButton({
   // 못하는 경우가 많아, 미리보기는 캡처한 각 페이지 캔버스를 이미지로 직접 보여준다.
   // 실제 PDF 파일은 다운로드할 때만 만든다.
   const [previewPages, setPreviewPages] = useState<string[] | null>(null);
-  // 다운로드 버튼 클릭과 실제 form.submit() 사이에 비동기 작업(PDF 생성)이 끼면, 클릭이라는
-  // "진짜 사용자 동작" 시점에서 너무 멀어져 카카오톡 인앱 브라우저가 제출을 막는 것으로
-  // 보인다(파일 입력이든 base64 텍스트든 방식과 무관하게 실기기에서 재현됨). 그래서 무거운
-  // 작업(캡처+PDF 인코딩)은 미리보기를 여는 시점에 전부 끝내 두고, 다운로드 버튼은 클릭 즉시
-  // (await 없이) form.submit()만 하도록 분리한다.
+  // 다운로드는 PC에서만 제공한다(모바일 인앱 브라우저 구조적 한계 — 위 isMobileDevice() 참고).
+  // 무거운 PDF 생성(캡처+인코딩)은 미리보기를 여는 시점에 끝내 두고 다운로드 버튼은 클릭
+  // 즉시 제출만 하도록 분리해뒀는데, 모바일에서는 애초에 이 작업 자체를 건너뛴다.
   const pdfBase64Ref = useRef<string | null>(null);
 
   async function handlePreview() {
@@ -256,8 +268,10 @@ export function ItineraryPdfButton({
         setError(true);
         return;
       }
-      const blob = await buildPdfBlob(canvases);
-      pdfBase64Ref.current = await blobToBase64(blob);
+      if (!isMobileDevice()) {
+        const blob = await buildPdfBlob(canvases);
+        pdfBase64Ref.current = await blobToBase64(blob);
+      }
       setPreviewPages(canvases.map((canvas) => canvas.toDataURL("image/jpeg", 0.85)));
     } catch {
       setError(true);
@@ -310,10 +324,14 @@ export function ItineraryPdfButton({
             <Button variant="outline" onClick={closePreview}>
               닫기
             </Button>
-            <Button onClick={handleDownload} disabled={isDownloading}>
-              {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              다운로드
-            </Button>
+            {isMobileDevice() ? (
+              <span className="text-xs text-muted-foreground">PDF 다운로드는 PC에서만 가능해요</span>
+            ) : (
+              <Button onClick={handleDownload} disabled={isDownloading}>
+                {isDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                다운로드
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
