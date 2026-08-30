@@ -71,7 +71,7 @@ npm run dev                         # http://localhost:3000
 | `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` | 네이버 지도 (국내) |
 | `NEXT_PUBLIC_GOOGLE_MAPS_CLIENT_KEY` | Google Maps (해외) |
 | `GOOGLE_GEOCODING_API_KEY` | 좌표 보정 |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `GOOGLE_SHEETS_SPREADSHEET_ID` | 여행 지식 검수 시트 연동 |
+| `GOOGLE_SHEETS_SPREADSHEET_ID` + (`GOOGLE_SA_CLIENT_EMAIL` + `GOOGLE_SA_PRIVATE_KEY`) **또는** (`GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` + `GOOGLE_OAUTH_REFRESH_TOKEN`) | 여행 지식·콘텐츠 검수 시트 연동. **서비스 계정 방식 권장**(토큰 만료 없음): 서비스 계정 생성 → JSON 키의 `client_email`/`private_key`를 두 변수에 넣고 스프레드시트를 그 이메일에 "편집자"로 공유. OAuth 방식은 레거시 폴백(`npm run google:oauth`로 발급, 동의 화면이 "테스트" 상태면 7일마다 만료) |
 | `ADMIN_USER_IDS` | `/admin` 접근 허용 Clerk userId 목록 (콤마 구분) |
 | `CRON_SECRET` | `/api/cron/prefetch` 보호 |
 
