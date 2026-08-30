@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -16,6 +18,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
  */
 export function MobileNav({ links }: { links: { href: string; label: string }[] }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -32,16 +35,26 @@ export function MobileNav({ links }: { links: { href: string; label: string }[] 
           <SheetTitle>메뉴</SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-1">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setOpen(false)}
-              className="rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {links.map((link) => {
+            const active =
+              link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground/75 hover:bg-accent hover:text-foreground",
+                )}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
         <div className="mt-auto flex flex-col gap-2 border-t pt-4">
           <Show when="signed-in">
