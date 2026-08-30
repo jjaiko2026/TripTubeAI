@@ -65,7 +65,7 @@ export function ItineraryItemCard({
   const hasDetail = item.tags.length > 0 || hasReferences || canManage;
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="overflow-hidden rounded-lg border bg-card transition-all hover:border-primary/40 hover:shadow-sm motion-reduce:transition-none">
       <div className="flex w-full items-start gap-3 p-3 text-left">
         {indexInDay !== null ? (
           <span
@@ -79,8 +79,10 @@ export function ItineraryItemCard({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-xs font-medium text-muted-foreground">{item.time}</span>
-            <p className="font-medium">{item.title}</p>
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-foreground/70">
+              {item.time}
+            </span>
+            <p className="font-semibold">{item.title}</p>
             {place && (
               <Badge variant="outline" className="text-[10px]">
                 {typeLabel ?? (placeKnowledge ? "여행 지식" : "TourAPI 장소")}

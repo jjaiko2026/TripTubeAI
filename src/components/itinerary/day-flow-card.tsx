@@ -28,7 +28,9 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
     <Card data-pdf-page="summary" className="border shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Workflow className="h-4 w-4 text-primary" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Workflow className="h-4 w-4" />
+          </span>
           일자별 여행 순서
         </CardTitle>
       </CardHeader>
@@ -40,10 +42,12 @@ export function DayFlowCard({ days }: { days: ItineraryDay[] }) {
               <a
                 key={day.day}
                 href={`#day-${day.day}`}
-                className="flex h-16 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-colors hover:bg-muted/40"
+                className="flex h-16 flex-col items-center justify-center gap-0.5 rounded-xl border-2 bg-card px-1.5 text-center transition-all hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0"
                 style={{ borderColor: dayColor }}
               >
-                <span className="text-sm font-bold">{day.day}일차</span>
+                <span className="text-sm font-bold" style={{ color: dayColor }}>
+                  {day.day}일차
+                </span>
                 <span className="w-full truncate text-xs text-muted-foreground">
                   {day.shortLabel || legacyShortLabel(day.label)}
                 </span>

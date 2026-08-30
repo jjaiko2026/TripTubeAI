@@ -75,8 +75,8 @@ export function ItineraryDaysList({
             key={day.day}
             id={`day-${day.day}`}
             data-pdf-day={day.day}
-            className="scroll-mt-20 py-0"
-            style={{ backgroundColor: `${dayColor}26` }}
+            className="scroll-mt-20 border-l-4 py-0 transition-shadow hover:shadow-md"
+            style={{ backgroundColor: `${dayColor}26`, borderLeftColor: dayColor }}
           >
             <details open={isOpen} onToggle={(e) => toggleDay(day.day, e.currentTarget.open)}>
               <summary className="flex cursor-pointer list-none items-center gap-2 p-(--card-spacing) text-base font-semibold [&::-webkit-details-marker]:hidden">

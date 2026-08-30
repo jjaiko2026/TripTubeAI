@@ -109,7 +109,9 @@ export async function ItineraryView({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Route className="h-4 w-4 text-primary" />
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Route className="h-4 w-4" />
+            </span>
             일정 동선
           </CardTitle>
         </CardHeader>
@@ -150,7 +152,9 @@ export async function ItineraryView({
 function SummaryStat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-start gap-2.5">
-      <span className="mt-0.5 text-primary">{icon}</span>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/20">
+        {icon}
+      </span>
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="text-sm font-semibold">{value}</p>
