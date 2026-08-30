@@ -15,7 +15,9 @@ export function TripTipsCard({ tripTips }: { tripTips: TripTips }) {
     <Card className="border shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <CloudSun className="h-4 w-4 text-primary" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <CloudSun className="h-4 w-4" />
+          </span>
           여행 전 알아두면 좋은 정보
         </CardTitle>
       </CardHeader>

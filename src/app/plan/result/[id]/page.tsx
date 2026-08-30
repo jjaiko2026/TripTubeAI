@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { ArrowLeft, RefreshCcw, Star, TriangleAlert } from "lucide-react";
+import { ArrowLeft, RefreshCcw, Sparkles, Star, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { NearbyPlacesSection } from "@/components/plan/nearby-places-section";
@@ -124,10 +124,13 @@ export default async function PlanResultPage({
       )}
 
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {itinerary.destinationName} 여행 일정이 완성됐어요
+        <p className="flex items-center gap-1.5 text-sm font-bold tracking-wide text-primary uppercase">
+          <Sparkles className="h-4 w-4" /> AI 여행 일정 완성
+        </p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
+          {itinerary.destinationName}, 이렇게 다녀오세요
         </h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1.5 text-muted-foreground">
           {hasAnySourcedItem
             ? "유튜브 영상과 블로그 글을 분석해 추천 코스를 구성했어요. 항목마다 참고한 출처도 함께 확인하세요."
             : hasReferencedPlace
@@ -140,8 +143,11 @@ export default async function PlanResultPage({
 
       <NearbyPlacesSection itineraryId={id} nights={request.nights} canManage={canManage} />
 
-      <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border bg-muted/30 p-6 text-center">
-        <p className="font-medium">이 일정이 마음에 드셨나요?</p>
+      <div className="mt-8 flex flex-col items-center gap-3 rounded-2xl border border-primary/20 bg-accent/40 p-6 text-center">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm shadow-primary/25">
+          <Star className="h-5 w-5 fill-current" />
+        </span>
+        <p className="font-semibold">이 일정으로 다녀오실 건가요?</p>
         <p className="text-sm text-muted-foreground">
           다녀오신 후 다른 여행자들을 위해 후기를 남겨주세요.
         </p>
