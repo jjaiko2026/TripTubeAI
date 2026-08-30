@@ -1,8 +1,8 @@
 import { google } from "@ai-sdk/google";
 
 /**
- * PRD v3.0 §20 — AI 제공자 추상화. 호출부(itinerary.ts / place-recommendation.ts /
- * trip-tips.ts / trip-chat route)는 smartModel/fastModel만 import하고, 실제 제공자는 여기서만
+ * PRD v3.0 §20 — AI 제공자 추상화. 호출부(itinerary.ts / trip-tips.ts / trip-chat route)는
+ * smartModel/fastModel만 import하고, 실제 제공자는 여기서만
  * 정한다. "provider/model" 문자열이 아니라 모델 인스턴스를 넘기므로 AI SDK가 별도 중계 계층
  * 없이 해당 제공자 API로 직접 호출한다.
  *

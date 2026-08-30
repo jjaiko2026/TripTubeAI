@@ -1,165 +1,112 @@
-# Karpathy-Inspired Claude Code Guidelines
+# TripTube AI
 
-A single `CLAUDE.md` file to improve Claude Code behavior, derived from [Andrej Karpathy's observations](https://x.com/karpathy/status/2015883857489522876) on LLM coding pitfalls.
+**Trip + YouTube + AI** — 사용자가 자연어로 여행 요구를 말하면, AI가 여행지·장소·이동 동선을 해석해 실제 일정으로 만들어 주고, 각 일정지마다 신뢰할 수 있는 참고자료(한국관광공사 · 축적된 여행 지식 · 네이버 블로그 · YouTube)를 붙여 주는 여행 일정 생성 서비스.
 
-## The Problems
+🔗 **배포:** https://triptube-ai.vercel.app
+📄 **제품 문서:** [PRD.md](PRD.md)
 
-From Andrej's post:
+---
 
-> "The models make wrong assumptions on your behalf and just run along with them without checking. They don't manage their confusion, don't seek clarifications, don't surface inconsistencies, don't present tradeoffs, don't push back when they should."
-
-> "They really like to overcomplicate code and APIs, bloat abstractions, don't clean up dead code... implement a bloated construction over 1000 lines when 100 would do."
-
-> "They still sometimes change/remove comments and code they don't sufficiently understand as side effects, even if orthogonal to the task."
-
-## The Solution
-
-Four principles in one file that directly address these issues:
-
-| Principle | Addresses |
-|-----------|-----------|
-| **Think Before Coding** | Wrong assumptions, hidden confusion, missing tradeoffs |
-| **Simplicity First** | Overcomplication, bloated abstractions |
-| **Surgical Changes** | Orthogonal edits, touching code you shouldn't |
-| **Goal-Driven Execution** | Leverage through tests-first, verifiable success criteria |
-
-## The Four Principles in Detail
-
-### 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-LLMs often pick an interpretation silently and run with it. This principle forces explicit reasoning:
-
-- **State assumptions explicitly** — If uncertain, ask rather than guess
-- **Present multiple interpretations** — Don't pick silently when ambiguity exists
-- **Push back when warranted** — If a simpler approach exists, say so
-- **Stop when confused** — Name what's unclear and ask for clarification
-
-### 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-Combat the tendency toward overengineering:
-
-- No features beyond what was asked
-- No abstractions for single-use code
-- No "flexibility" or "configurability" that wasn't requested
-- No error handling for impossible scenarios
-- If 200 lines could be 50, rewrite it
-
-**The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
-
-### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-
-- Don't "improve" adjacent code, comments, or formatting
-- Don't refactor things that aren't broken
-- Match existing style, even if you'd do it differently
-- If you notice unrelated dead code, mention it — don't delete it
-
-When your changes create orphans:
-
-- Remove imports/variables/functions that YOUR changes made unused
-- Don't remove pre-existing dead code unless asked
-
-**The test:** Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform imperative tasks into verifiable goals:
-
-| Instead of... | Transform to... |
-|--------------|-----------------|
-| "Add validation" | "Write tests for invalid inputs, then make them pass" |
-| "Fix the bug" | "Write a test that reproduces it, then make it pass" |
-| "Refactor X" | "Ensure tests pass before and after" |
-
-For multi-step tasks, state a brief plan:
+## 한눈에 보기
 
 ```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+"3박4일 도쿄 여행, 가족끼리 힐링하고 맛집 위주로"
+        │
+        ▼
+① 요구 해석 → ② 기존 DB·Knowledge 우선 확보(부족분만 외부 Search)
+        → ③ 장소 선정 → ④ 이동 동선 고려한 날짜별 일정 생성
+        → ⑤ 일정지마다 참고자료 1~3개 부착 → ⑥ 사용자 편집 · 후기 축적
 ```
 
-Strong success criteria let the LLM loop independently. Weak criteria ("make it work") require constant clarification.
+매 요청마다 인터넷을 처음부터 검색하지 않는다. 기존 DB·Knowledge를 우선 활용하고 부족한 정보만 외부에서 보충한다.
 
-## Install
+## 기술 스택
 
-**Option A: Claude Code Plugin (recommended)**
+| 영역 | 사용 |
+|---|---|
+| 프레임워크 | Next.js 16 (App Router, Turbopack) · React 19 · TypeScript |
+| 스타일 | Tailwind CSS v4 · shadcn 스타일 UI (`@base-ui/react`) · 라이트 전용 |
+| 인증 | Clerk (`@clerk/nextjs`) |
+| DB | Drizzle ORM + Neon Postgres (serverless) |
+| AI | Vercel AI SDK v7 + Google Gemini 직결 (`@ai-sdk/google`, `gemini-3.6-flash`) |
+| 차트 | Recharts |
+| 외부 데이터 | 한국관광공사 TourAPI · YouTube Data API · 네이버 블로그/지도 · Google Maps/Geocoding · Google Sheets(검수 파이프라인) |
+| 배포 | Vercel |
 
-From within Claude Code, first add the marketplace:
-```
-/plugin marketplace add forrestchang/andrej-karpathy-skills
-```
+## 로컬 실행
 
-Then install the plugin:
-```
-/plugin install andrej-karpathy-skills@karpathy-skills
-```
-
-This installs the guidelines as a Claude Code plugin, making the skill available across all your projects.
-
-**Option B: CLAUDE.md (per-project)**
-
-New project:
 ```bash
-curl -o CLAUDE.md https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md
+npm install
+cp .env.local.example .env.local   # 아래 환경변수 채우기 (예시 파일이 없으면 직접 생성)
+npm run dev                         # http://localhost:3000
 ```
 
-Existing project (append):
-```bash
-echo "" >> CLAUDE.md
-curl https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md >> CLAUDE.md
+> Windows에서 `⚠ Slow filesystem detected` 가 뜨면 Windows Defender 실시간 검사 제외 항목에
+> 프로젝트 폴더를 추가하면 컴파일/HMR이 크게 빨라진다.
+
+### 스크립트
+
+| 명령 | 설명 |
+|---|---|
+| `npm run dev` | 개발 서버 |
+| `npm run build` / `npm start` | 프로덕션 빌드 / 실행 |
+| `npm run lint` | ESLint |
+| `npm run db:push` | Drizzle 스키마를 DB에 반영 (additive만 — 파괴적 마이그레이션 금지) |
+| `npm run db:studio` | Drizzle Studio |
+| `npm run db:seed` | 후기 시드 데이터 |
+| `npm run google:oauth` | Google OAuth refresh token 발급 (검수 시트용) |
+
+## 환경변수
+
+`.env.local` 에 설정한다.
+
+| 변수 | 용도 |
+|---|---|
+| `DATABASE_URL` | Neon Postgres 연결 문자열 |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Clerk 인증 |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini API (aistudio.google.com 무료 발급) |
+| `YOUTUBE_API_KEY` | YouTube Data API |
+| `YOUTUBE_DAILY_SEARCH_LIMIT`, `YOUTUBE_COLLECTION_DAILY_LIMIT` | YouTube 호출 상한 (선택) |
+| `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET` | 네이버 블로그 검색 |
+| `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` | 네이버 지도 (국내) |
+| `NEXT_PUBLIC_GOOGLE_MAPS_CLIENT_KEY` | Google Maps (해외) |
+| `GOOGLE_GEOCODING_API_KEY` | 좌표 보정 |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`, `GOOGLE_SHEETS_SPREADSHEET_ID` | 여행 지식 검수 시트 연동 |
+| `ADMIN_USER_IDS` | `/admin` 접근 허용 Clerk userId 목록 (콤마 구분) |
+| `CRON_SECRET` | `/api/cron/prefetch` 보호 |
+
+키가 없어도 각 호출부에 폴백이 있어 앱은 동작한다(AI 실패 시 결정론적 템플릿, 외부 검색 실패 시 빈 결과 등).
+
+## 주요 라우트
+
+| 경로 | 설명 |
+|---|---|
+| `/` | 랜딩 |
+| `/plan/new` | 일정 만들기 — 폼 + 대화형 챗봇 (Pipeline A, 유일한 사용자 여정) |
+| `/plan/result/[id]` | 생성된 일정 — 요약·지도·일자별 카드·참고자료·PDF·공유. 소유자 무관 공개 조회 |
+| `/plan/mine` | 내 일정 목록 |
+| `/plan/example` | 예시 일정 |
+| `/reviews` | 여행 후기 |
+| `/dashboard` | 공개 이용 통계 (목 데이터) |
+| `/admin` | 관리자 전용 (`ADMIN_USER_IDS`) — 요청 로그, 검수 시트 패널 등 |
+| `/api/trip-chat`, `/api/trip-tips`, `/api/nearby-places`, `/api/pdf-download`, `/api/cron/prefetch` | 내부 API |
+
+## 구조
+
+```
+src/
+  app/            App Router 라우트 + API
+  components/     UI 프리미티브(ui/) · 일정(itinerary/) · 폼(plan/) · 후기 · 대시보드
+  db/             Drizzle 스키마 + 쿼리 (queries.ts, knowledge-queries.ts, schema.ts)
+  lib/
+    ai/model.ts   AI 제공자 선택 한 곳 (smartModel / fastModel)
+    itinerary.ts  일정 생성 엔진 (Pipeline A)
+    geo/, tour-api/, sheets/, knowledge/, real/, mock/
 ```
 
-## Using with Cursor
+## 참고
 
-This repository includes a committed Cursor project rule ([`.cursor/rules/karpathy-guidelines.mdc`](.cursor/rules/karpathy-guidelines.mdc)) so the same guidelines apply when you open the project in Cursor. See **[CURSOR.md](CURSOR.md)** for setup, using the rule in other projects, and how this relates to Claude Code.
-
-## Key Insight
-
-From Andrej:
-
-> "LLMs are exceptionally good at looping until they meet specific goals... Don't tell it what to do, give it success criteria and watch it go."
-
-The "Goal-Driven Execution" principle captures this: transform imperative instructions into declarative goals with verification loops.
-
-## How to Know It's Working
-
-These guidelines are working if you see:
-
-- **Fewer unnecessary changes in diffs** — Only requested changes appear
-- **Fewer rewrites due to overcomplication** — Code is simple the first time
-- **Clarifying questions come before implementation** — Not after mistakes
-- **Clean, minimal PRs** — No drive-by refactoring or "improvements"
-
-## Customization
-
-These guidelines are designed to be merged with project-specific instructions. Add them to your existing `CLAUDE.md` or create a new one.
-
-For project-specific rules, add sections like:
-
-```markdown
-## Project-Specific Guidelines
-
-- Use TypeScript strict mode
-- All API endpoints must have tests
-- Follow the existing error handling patterns in `src/utils/errors.ts`
-```
-
-## Tradeoff Note
-
-These guidelines bias toward **caution over speed**. For trivial tasks (simple typo fixes, obvious one-liners), use judgment — not every change needs the full rigor.
-
-The goal is reducing costly mistakes on non-trivial work, not slowing down simple tasks.
-
-## License
-
-MIT
+- 코드 작성 가이드라인은 [CLAUDE.md](CLAUDE.md) 참고 (LLM 코딩 실수 방지 규칙).
+- `/places`(장소 둘러보기)와 Pipeline B는 A-BRIDGE 결정(PRD 부록 A) 이후 폐지됐다. "이 지역 더 둘러보기"는 AI 생성(`/api/nearby-places`)으로 대체.
+- PDF 다운로드는 PC 전용. 모바일 인앱 브라우저(카카오/네이버)는 다운로드를 완료하지 못해 미리보기 + 안내만 제공한다.
+- 다크 모드는 없다(라이트 전용). 필요 시 토글 + 전용 QA로 별도 기능화.

@@ -8,9 +8,16 @@ import { SourceCard } from "@/components/itinerary/source-card";
 import type { ItineraryItem } from "@/lib/types";
 import type { PlaceWithDetails } from "@/db/queries";
 import type { KnowledgeDerivedPlace } from "@/db/knowledge-queries";
-import { CONTENT_TYPE_LABEL } from "@/components/places/place-card";
 import { removeItineraryItemAction, removePlaceFromItineraryAction } from "@/lib/actions";
 import { purposeLabel } from "@/lib/purposes";
+
+// TourAPI contentTypeId → 한글 라벨. 일정지 카드의 참고자료 유형 표시에만 쓴다.
+const CONTENT_TYPE_LABEL: Record<string, string> = {
+  "12": "관광지",
+  "14": "문화시설",
+  "39": "음식점",
+  "32": "숙박",
+};
 
 // 일정지 참고자료는 4개 유형(한국관광공사 / 여행 지식 / 블로그 / 영상)에서 품질순 최대 3개다
 // (PRD v3.0 §13). place(관광공사·Knowledge)가 있으면 그 1건을 먼저 채우고, 남은 자리를
@@ -143,15 +150,6 @@ export function ItineraryItemCard({
                         공식 홈페이지
                       </Link>
                     )}
-                    {/* fromItinerary로 어디서 왔는지 알려줘, 장소 상세의 뒤로가기가 일정으로
-                        돌아가도록 한다(그전엔 항상 /places로 고정돼 있어 일정 컨텍스트가
-                        끊겼었다). */}
-                    <Link
-                      href={`/places/${item.placeId}?fromItinerary=${itineraryId}`}
-                      className="text-primary hover:underline"
-                    >
-                      장소 상세 페이지 보기
-                    </Link>
                     <span className="text-muted-foreground">
                       {place.coordinateReliable ? "지도에 표시돼요." : "위치 확인 중이라 지도에는 표시되지 않아요."}
                     </span>

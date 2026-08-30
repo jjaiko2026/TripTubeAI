@@ -252,7 +252,7 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 
 1. `resolveDestination()` — `findDestination()` 또는 `genericDestination()`.
 2. 지원 지역이면 `verifiedPlaces` / `regionalKnowledge` 조회.
-3. **`generateItineraryWithAI()`** (`anthropic/claude-sonnet-5`, Zod 스키마 강제):
+3. **`generateItineraryWithAI()`** (`smartModel` — Gemini 직결, §20·§27.2, Zod 스키마 강제):
    - 먼저 `dayRegions[]` — 1일차부터 각 날의 소지역을 지리적으로 한 방향으로 이어지게 결정.
    - `days[].items[]` — 시간(HH:MM) · title(지도에 찍히는 구체적 장소 하나) · description · tags(목적) · geocodeQuery(해외는 현지어/영문).
    - 1일차 첫 항목 = 도착, 마지막 날 마지막 항목 = 출발. 해외·제주는 공항, notes에 배편 언급 시 여객터미널, 그 외 국내는 일반 도착/출발. notes에 교통수단이 명시되면 항상 그쪽 우선.
@@ -287,8 +287,8 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 - 여행 팁 카드(`TripTipsCard`): 기후 · 준비물 · (해외) 최근 이슈. `trip_tips_cache` 재사용.
 - 일정 동선 지도(§15).
 - 일자별 순서도(`DayFlowCard`).
-- 날짜별 카드 → 항목 카드(시간 · 제목 · 설명 · 태그 · 참고자료 · 지도 인덱스 · placeId 연결 시 장소 상세).
-- PDF 내보내기(`ItineraryPdfButton`, 클라이언트 html2canvas + jsPDF).
+- 날짜별 카드 → 항목 카드(시간 · 제목 · 설명 · 태그 · 참고자료 · 지도 인덱스).
+- PDF 내보내기(`ItineraryPdfButton`, 클라이언트 html2canvas + jsPDF) — **PC 전용**(§27.3). 모바일은 미리보기 + 안내.
 - 공유 링크(결과 페이지는 소유자 무관 공개 조회).
 
 ## 15. Map / Movement Visualization
@@ -407,8 +407,8 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 | AI 제공자 | `src/lib/ai/model.ts` | ✅ Gemini API 직결 (`@ai-sdk/google`, `smartModel`/`fastModel`) |
 | 챗봇 | `src/lib/trip-chat.ts`, `src/app/api/trip-chat/route.ts` | ✅ `fastModel` |
 | 일정 생성 (Pipeline A) | `src/lib/itinerary.ts` | ✅ `smartModel` + 자체랭킹 + fallback |
-| 장소 후보/추천 (Pipeline B) | `src/lib/place-recommendation.ts`, `src/db/knowledge-queries.ts` | ✅ TourAPI + Knowledge 병합 |
-| 장소 브라우징 | `src/app/places/{page,recommend/page,plan/page,[id]/page}.tsx` | ✅ 5개 지역 |
+| 장소 후보 병합 | `src/lib/itinerary.ts`, `src/db/knowledge-queries.ts` | ✅ TourAPI + Knowledge를 `verifiedPlaces`로 병합 (Pipeline B 전용 `place-recommendation.ts`는 폐지, §27.1) |
+| ~~장소 브라우징 `/places`~~ | — | ❌ 폐지 (§27.1). 근처 장소는 `/api/nearby-places` AI 생성 |
 | A↔B 브릿지 | `itinerary.ts` `verifiedPlaces`/`regionalKnowledge`/`mustIncludePlaceIds` | ✅ PHASE 14 |
 | 결과 화면 | `src/app/plan/result/[id]/page.tsx`, `ItineraryView` | ✅ |
 | 지도 Provider | `src/components/itinerary/map-providers/` | ✅ Naver/Google |
@@ -418,9 +418,9 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 | Knowledge 검수 | `src/lib/sheets/*`, `KNOWLEDGE_REVIEW` 시트 | ✅ Q1~Q9 |
 | 편집 | `src/lib/actions.ts` (add/remove/replace + `reviseItineraryDayAction`) | ✅ 자연어 날짜 재생성 포함 (§16) |
 | 후기 | `src/app/reviews/`, `createReviewAction` | ✅ `reviews.itinerary_id`로 일정 연결 (§18) |
-| 대시보드 | `src/app/dashboard/page.tsx` | ✅ 실데이터 + Pipeline B 패널 |
+| 대시보드 | `src/app/dashboard/page.tsx` | ✅ 공개 목 통계 (`/admin`이 실데이터 담당) |
 | DB 스키마 | `src/db/schema.ts` (17 테이블: 코어 7 + ATKB 10) | ✅ |
-| 분석 로그 | `pipeline_b_events` | ✅ |
+| 분석 로그 | `pipeline_b_events` | 🟡 `/places` 흐름 지표 — 폐지 후속 정리 대상 (§27.1) |
 
 **스택:** Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 · shadcn/Base UI · Clerk · Neon Postgres + Drizzle · Vercel · AI SDK v7.
 
@@ -443,6 +443,34 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 - YouTube 웹 크롤링·비공식 API 우회, 영상 전체 다운로드·재배포
 - 특정 AI 중계 계층을 필수 구성요소로 고정하는 것
 - 제출 데모에 직접 영향을 주지 않는 모든 고도화
+
+---
+
+## 27. v3.0 이후 반영 사항 (2026-08-30)
+
+v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항 중 이 절과 상충하는 서술은 이 절이 우선한다.
+
+### 27.1 `/places` · Pipeline B 폐지
+
+- **A-BRIDGE 결정(부록 A) 확정.** "장소 둘러보기"(`/places`, `/places/recommend`, `/places/plan`, `/places/[id]`)와 Pipeline B 전용 코드(`lib/place-recommendation.ts`, `lib/places-trip-context.ts`, `components/places/*`)를 **삭제**했다. 사용자 여정은 `/plan/new`(Pipeline A) 하나로 단일화.
+- "이 지역 더 둘러보기"는 장소 카탈로그가 아니라 **AI 생성**(`/api/nearby-places`, `generateNearbyPlaces` + `nearby_places_cache`)으로 대체.
+- `db/pipeline-b-events.ts` · `pipeline_b_events` 테이블 · `/admin`의 Pipeline B 패널 · `actions.ts`의 `addPlaceToItineraryAction`은 후속 정리 대상으로 남겨 둠(라이브 파일이라 별도 PR). DB 테이블은 유지(파괴적 마이그레이션 금지).
+- 본문 §9.3 / §11 / §15 / §16 / §24의 `/places` 언급은 히스토리로 둔다.
+
+### 27.2 AI 모델 — Gemini 직접 호출
+
+- Vercel AI Gateway를 걷어내고 **Google Gemini API 직결**(`@ai-sdk/google`, `GOOGLE_GENERATIVE_AI_API_KEY`, `gemini-3.6-flash`). §20과 동일 — 본문 §12의 `anthropic/claude-sonnet-5` 표기는 `smartModel`(Gemini)로 정정.
+
+### 27.3 PDF 다운로드 PC 전용
+
+- 모바일 인앱 브라우저(카카오/네이버)는 클라이언트 측 우회 5종을 모두 시도해도 다운로드를 완료하지 못해, **PDF는 PC 전용**으로 제한. 모바일은 미리보기 + 안내만 제공(`ItineraryPdfButton`).
+
+### 27.4 브랜드 비주얼 아이덴티티 (UI/UX 리프레시)
+
+- 컨셉 "여행 × 유튜브의 만남". 3색 브랜드 팔레트를 `globals.css` 토큰으로 정의: `--brand`(바다빛 블루, `--primary`의 별칭) · `--brand-2`(유튜브 코럴) · `--brand-3`(노을 앰버).
+- 선명한 타이포(진한 `--foreground`/`--muted-foreground`), 생동감 있는 카드(그림자 + hover 리프트/스케일 + `active:` 탭 피드백), 그라데이션 CTA(`variant="brand"`), 스크롤 등장 애니메이션(`components/reveal.tsx`, `prefers-reduced-motion` 대응).
+- **라이트 전용 확정.** 작동한 적 없던 `.dark` 블록·`dark:` 유틸 제거, `color-scheme: light` 명시. 다크 모드는 필요 시 토글 + 전용 QA로 별도 기능화.
+- 대비: `.bg-brand-gradient` 위 흰 글자가 WCAG AA(4.5:1)를 넘도록 그라데이션 양 끝을 조정.
 
 ---
 
