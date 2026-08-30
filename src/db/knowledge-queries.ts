@@ -380,7 +380,7 @@ async function getConfirmedCourseVideoIds(regionCode: string): Promise<Set<strin
 /**
  * Knowledge-derived Place(§PlaceWithDetails와 구조적으로 호환)에 연결된 Knowledge 근거를
  * 함께 담은 타입. PlaceWithDetails를 그대로 extends해, getPlacesByRegion()이 반환하는 TourAPI
- * 장소와 동일한 필드 모양을 유지한다 — itinerary.ts/place-recommendation.ts가 이미 그 필드들
+ * 장소와 동일한 필드 모양을 유지한다 — itinerary.ts가 이미 그 필드들
  * (category/overview/coordinateReliable 등)을 읽는 기존 로직을 그대로 재사용할 수 있게 하기
  * 위해서다. overview에는 이 장소와 연결된 Knowledge의 summary를 그대로 담아, 기존 p.overview
  * 참조 지점들이 별도 수정 없이도 Knowledge 근거를 자연히 전달받는다.

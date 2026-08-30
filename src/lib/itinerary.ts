@@ -26,7 +26,7 @@ import {
   getKnowledgeDerivedPlacesByRegion,
   type RegionalKnowledgeItem,
 } from "@/db/knowledge-queries";
-import { getDetailFields } from "@/components/places/detail-field-labels";
+import { getDetailFields } from "@/lib/detail-field-labels";
 import { smartModel } from "@/lib/ai/model";
 
 // PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts).
