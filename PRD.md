@@ -194,8 +194,8 @@ Knowledge는 단순 검색 결과가 아니라 **"TripTube AI가 여행 계획�
 |---|---|---|
 | `getConfirmedRegionalKnowledge(regionCode)` | 일정 생성 AI 프롬프트의 `regionalKnowledge` 참고자료 | status=confirmed, videoId 경로, 지역당 최대 10 |
 | `getKnowledgeDerivedPlacesByRegion(regionCode)` | 추천/일정의 장소 후보(`verifiedPlaces`)에 병합 | confirmed + publishable=yes + place_id 연결 |
-| `getConfirmedRegionalKnowledgeByType(regionCode, type)` | `/places` 검수된 카드(맛집/여행지/숙소/쇼핑/체험) | confirmed + publishable=yes |
-| `getConfirmedRegionalCourses(regionCode)` | `/places` 검수된 코스 카드 | confirmed + type=course |
+| ~~`getConfirmedRegionalKnowledgeByType`~~ | `/places` 검수 카드 전용 → 함수 삭제 (§27.1) | — |
+| ~~`getConfirmedRegionalCourses`~~ | `/places` 검수 코스 카드 전용 → 함수 삭제 (§27.1) | — |
 
 ### 9.4 v3.0에서의 위치
 
@@ -454,7 +454,8 @@ v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항
 
 - **A-BRIDGE 결정(부록 A) 확정.** "장소 둘러보기"(`/places`, `/places/recommend`, `/places/plan`, `/places/[id]`)와 Pipeline B 전용 코드(`lib/place-recommendation.ts`, `lib/places-trip-context.ts`, `components/places/*`)를 **삭제**했다. 사용자 여정은 `/plan/new`(Pipeline A) 하나로 단일화.
 - "이 지역 더 둘러보기"는 장소 카탈로그가 아니라 **AI 생성**(`/api/nearby-places`, `generateNearbyPlaces` + `nearby_places_cache`)으로 대체.
-- `db/pipeline-b-events.ts` · `pipeline_b_events` 테이블 · `/admin`의 Pipeline B 패널 · `actions.ts`의 `addPlaceToItineraryAction`은 후속 정리 대상으로 남겨 둠(라이브 파일이라 별도 PR). DB 테이블은 유지(파괴적 마이그레이션 금지).
+- Pipeline B 잔여도 제거: `db/pipeline-b-events.ts` 삭제, `actions.ts`의 `generateItineraryFromPlacesAction`·`addPlaceToItineraryAction`·`logPipelineBEvent` 호출 제거, `/admin`의 "Pipeline B 실사용 현황" 패널 제거. **DB `pipeline_b_events` 테이블과 `schema.ts`의 정의는 유지**(파괴적 마이그레이션 금지 정책 — 다시 쓸 때 재연결).
+- `src/db/place-insert.ts`(repo 내 호출자 0건, ATKB 추출 스크립트가 미커밋이라 사용처 없음)도 삭제. 재필요 시 `lib/knowledge/` 스크립트와 함께 복원.
 - 본문 §9.3 / §11 / §15 / §16 / §24의 `/places` 언급은 히스토리로 둔다.
 
 ### 27.2 AI 모델 — Gemini 직접 호출

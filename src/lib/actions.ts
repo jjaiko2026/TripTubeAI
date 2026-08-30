@@ -6,20 +6,16 @@ import { auth } from "@clerk/nextjs/server";
 import { generateItinerary, reviseItineraryDay } from "@/lib/itinerary";
 import {
   addAiItemToItinerary,
-  addPlaceToItinerary,
   createReview,
   deleteItinerary,
   getItinerary,
-  getPlaceById,
-  getRegionDomesticOverseas,
   removeItineraryItemByIndex,
   removePlaceFromItinerary,
   saveItinerary,
   updateItinerary,
 } from "@/db/queries";
-import { logPipelineBEvent } from "@/db/pipeline-b-events";
 import type { MemberType, Region, TripPurpose, TripRequest } from "@/lib/types";
-import { normalizeTripPurposes, isPurposeId } from "@/lib/purposes";
+import { normalizeTripPurposes } from "@/lib/purposes";
 
 /** 폼의 숨은 input(purposesJson)에 담긴 값을 파싱합니다. 조작되거나 비어 있어도 조용히 빈 배열로 대체합니다. */
 function parsePurposesJson(value: FormDataEntryValue | null): unknown {
@@ -70,81 +66,6 @@ export async function createItineraryAction(formData: FormData) {
   redirect(itinerary.usedFallback ? `/plan/result/${id}?fallback=1` : `/plan/result/${id}`);
 }
 
-/**
- * AI ITINERARY GENERATION v2 (PHASE 2 STEP 2) — /places/plan에서 선택한 TourAPI 장소를
- * Pipeline A(generateItinerary(), YouTube/Naver 기존 파이프라인)의 mustInclude 신호로 넘긴다.
- * 이전엔 place-itinerary.ts(TourAPI 후보만으로 독립적으로 날짜를 배치하던 별도 생성기)를
- * 호출했지만, 이제 최종 날짜/순서/동선 판단은 전부 Pipeline A가 한다 — place-itinerary.ts
- * 자체는 삭제하지 않는다(재검토 대상으로 보류). 로그인이 필요하다 — saveItinerary()가
- * 소유자(userId)를 요구하기 때문(하위 호환: userId ?? null을 받는 createItineraryAction과
- * 달리 이 경로는 원래도 로그인 필수였다 — 그 동작을 그대로 유지).
- */
-// regionCode → generateItinerary()가 인식하는 destination 텍스트. itinerary.ts의
-// resolveTourApiRegions()는 정확히 "서울"/"제주도"/"서귀포"/"도쿄"/"오사카" 문자열만 키로
-// 인식하므로(PHASE 2 STEP 1 조사, PHASE 13-3에서 도쿄/오사카 추가), 화면 표시용 라벨
-// ("제주시"/"서귀포시", 예: dashboard/page.tsx의 별도 REGION_LABELS)을 그대로 destination에
-// 넣으면 verifiedPlaces가 조용히 빈 배열이 된다. 이 상수는 오직 그 매칭을 통과시키기 위한
-// 것으로, 화면에는 노출되지 않는다. "도쿄"/"오사카"는 mock/destinations.ts에 이미 존재하는
-// DestinationProfile 이름 그대로다(findDestination() alias 매칭 확인됨) — genericDestination()
-// fallback 없이 정확히 그 프로필로 resolve된다.
-const REGION_DESTINATION_NAMES: Record<string, string> = {
-  "KR-SEOUL-CITY": "서울",
-  "KR-JEJU-JEJUSI": "제주도",
-  "KR-JEJU-SEOGWIPO": "서귀포",
-  "JP-TOKYO": "도쿄",
-  "JP-OSAKA": "오사카",
-};
-
-export async function generateItineraryFromPlacesAction(formData: FormData) {
-  const { userId } = await auth();
-  if (!userId) return;
-
-  const regionCode = String(formData.get("regionCode") ?? "");
-  const destinationName = REGION_DESTINATION_NAMES[regionCode];
-  if (!destinationName) return;
-
-  const nights = Math.min(6, Math.max(0, Number(formData.get("nights") ?? 2)));
-  const notes = String(formData.get("notes") ?? "").trim();
-  const purposes: TripPurpose[] = formData
-    .getAll("purposes")
-    .map(String)
-    .filter(isPurposeId)
-    .map((id) => ({ id, priority: "normal" }));
-  const memberType = String(formData.get("memberType") ?? "혼자") as MemberType;
-  const memberCount = Math.max(1, Number(formData.get("memberCount") ?? 1));
-  const month = Math.min(12, Math.max(1, Number(formData.get("month") ?? new Date().getMonth() + 1)));
-  // PHASE 13-2부터 이어진 값 — /places/recommend에서 사용자가 체크한 장소 id들. candidates
-  // 대조(존재 검증)는 generateItinerary() 내부(verifiedPlaces)에서 이뤄진다 — 여기서는
-  // 문자열 그대로만 모은다.
-  const selectedPlaceIds = formData.getAll("selectedPlaceIds").map(String).filter(Boolean);
-  // PHASE 13-6 — regionCode와 무관하게 항상 "국내"였던 하드코딩 제거. regions.domesticOverseas
-  // (단일 진실 소스)를 그대로 조회해 TripRequest.region에 싣는다 — destination 이름으로
-  // 추론하지 않고, findDestination()의 region도 재사용하지 않는다(그 필드는 지오코딩/지도
-  // 판단에 쓰지 않기로 이미 문서화되어 있음, mock/destinations.ts 참고). 이 값이 그대로
-  // Itinerary.region → resolveGeocodeProvider()/resolveMapProvider()까지 전달된다.
-  const region = await getRegionDomesticOverseas(regionCode);
-
-  await logPipelineBEvent({ eventType: "plan_generate_requested", userId, regionCode });
-
-  const request: TripRequest = {
-    destination: destinationName,
-    region,
-    memberType,
-    memberCount,
-    nights,
-    month,
-    purposes,
-    notes,
-  };
-  const itinerary = await generateItinerary(request, { mustIncludePlaceIds: selectedPlaceIds });
-  const itineraryId = await saveItinerary(itinerary, userId);
-
-  await logPipelineBEvent({ eventType: "itinerary_completed", userId, regionCode, itineraryId });
-
-  // PHASE 3 — createItineraryAction과 동일한 방식(§usedFallback 휘발성 신호).
-  redirect(itinerary.usedFallback ? `/plan/result/${itineraryId}?fallback=1` : `/plan/result/${itineraryId}`);
-}
-
 export async function deleteItineraryAction(formData: FormData) {
   const { userId } = await auth();
   if (!userId) return;
@@ -158,36 +79,8 @@ export async function deleteItineraryAction(formData: FormData) {
 }
 
 /**
- * "장소를 일정에 추가" 폼 액션(TOUR PLACE → ITINERARY v1). 클라이언트가 보낸 placeId로
- * getPlaceById()를 다시 호출해 최신 DB 값을 신뢰한다 — 폼에 담긴 장소명/좌표 등 사용자가
- * 조작 가능한 값은 쓰지 않는다. 로그인하지 않았거나 본인 소유 일정이 아니면 조용히 아무
- * 것도 하지 않는다(addPlaceToItinerary의 소유자 검사와 이중으로 보호).
- */
-export async function addPlaceToItineraryAction(formData: FormData) {
-  const { userId } = await auth();
-  if (!userId) return;
-
-  const placeId = String(formData.get("placeId") ?? "");
-  const itineraryId = String(formData.get("itineraryId") ?? "");
-  // day 선택 UI가 없던 이전 버전과의 호환을 위해 값이 없으면 1일차로 대체한다.
-  const dayRaw = Number(formData.get("day") ?? 1);
-  const day = Number.isFinite(dayRaw) && dayRaw >= 1 ? Math.trunc(dayRaw) : 1;
-  if (!placeId || !itineraryId) return;
-
-  const place = await getPlaceById(placeId);
-  if (!place) return;
-
-  await addPlaceToItinerary(itineraryId, userId, place, day);
-  // await한다 — Vercel Functions는 응답 이후 즉시 인스턴스를 회수할 수 있어(fire-and-forget이면
-  // 이 insert가 완료 전에 잘릴 위험이 있음) 실사용 지표 신뢰성을 위해 완료를 기다린다.
-  await logPipelineBEvent({ eventType: "place_selected", userId, placeId, itineraryId });
-  revalidatePath(`/plan/result/${itineraryId}`);
-  revalidatePath(`/places/${placeId}`);
-}
-
-/**
  * "이 지역 더 둘러보기"(src/components/plan/nearby-places-section.tsx)에서 고른 AI 제안
- * 장소를 일정 날짜에 추가한다. addPlaceToItineraryAction과 달리 DB의 places 행이 아니라
+ * 장소를 일정 날짜에 추가한다. DB의 places 행이 아니라
  * 제안 텍스트(title/reason)를 그대로 항목으로 넣는다. 로그인하지 않았거나 본인 소유 일정이
  * 아니면 조용히 아무 것도 하지 않는다(addAiItemToItinerary의 소유자 검사와 이중 보호).
  */
@@ -209,7 +102,7 @@ export async function addSuggestedItemToItineraryAction(formData: FormData) {
 /**
  * 일정에서 TourAPI 장소 항목을 제거한다(ITINERARY PLACE MANAGEMENT v1). placeId 기준으로
  * 처리하며, 로그인하지 않았거나 본인 소유 일정이 아니면 조용히 아무 것도 하지 않는다
- * (removePlaceFromItinerary의 소유자 검사와 이중 보호, addPlaceToItineraryAction과 동일 패턴).
+ * (removePlaceFromItinerary의 소유자 검사와 이중 보호).
  */
 export async function removePlaceFromItineraryAction(formData: FormData) {
   const { userId } = await auth();

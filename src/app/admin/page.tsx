@@ -1,24 +1,15 @@
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Compass, Eye, MousePointerClick, CalendarPlus, CheckCircle2, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import { SheetsSyncPanel } from "@/components/dashboard/sheets-sync-panel";
 import { KnowledgeSheetsSyncPanel } from "@/components/dashboard/knowledge-sheets-sync-panel";
 import { getKnowledgeReviewProgress } from "@/db/knowledge-queries";
-import { getPipelineBUsageStats, PIPELINE_B_TEST_USER_IDS } from "@/db/pipeline-b-events";
 import { getAdminItineraryRows, getAdminUserRows } from "@/db/admin-queries";
 import { formatNumber, relativeTimeLabel } from "@/lib/format";
 import { isAdminUser } from "@/lib/admin";
-
-// /places, /places/recommend, /places/plan과 동일한 3개 값 — 지역별 집계 표 라벨용.
-const REGION_LABELS: Record<string, string> = {
-  "KR-SEOUL-CITY": "서울",
-  "KR-JEJU-JEJUSI": "제주시",
-  "KR-JEJU-SEOGWIPO": "서귀포시",
-};
 
 function truncate(text: string, max = 40): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
@@ -40,8 +31,7 @@ export default async function AdminPage({
   const { userId } = await auth();
   if (!isAdminUser(userId)) notFound();
 
-  const [pipelineB, knowledgeProgress, requestRows, userRows, params] = await Promise.all([
-    getPipelineBUsageStats(),
+  const [knowledgeProgress, requestRows, userRows, params] = await Promise.all([
     getKnowledgeReviewProgress(),
     getAdminItineraryRows(200),
     getAdminUserRows(100),
@@ -61,22 +51,12 @@ export default async function AdminPage({
               ? "시트 연동 중 오류가 발생했어요. 환경변수와 시트 공유 설정을 확인해주세요."
               : null;
 
-  // 지역코드 × (추천 실행/일정 생성 요청/완성 일정) 피벗.
-  const regionPivot = new Map<string, { recommend: number; planRequested: number; completed: number }>();
-  for (const row of pipelineB.byRegion) {
-    const entry = regionPivot.get(row.regionCode) ?? { recommend: 0, planRequested: 0, completed: 0 };
-    if (row.eventType === "recommend_executed") entry.recommend += row.count;
-    else if (row.eventType === "plan_generate_requested") entry.planRequested += row.count;
-    else if (row.eventType === "itinerary_completed") entry.completed += row.count;
-    regionPivot.set(row.regionCode, entry);
-  }
-
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">관리자</h1>
         <p className="mt-1 text-muted-foreground">
-          사용자 요청·일정 데이터와 Pipeline B 실사용 현황, 콘텐츠/지식 검수를 한곳에서 봅니다. 관리자만 접근할 수 있어요.
+          사용자 요청·일정 데이터와 콘텐츠·지식 검수를 한곳에서 봅니다. 관리자만 접근할 수 있어요.
         </p>
         <Link href="/dashboard" className="mt-2 inline-block text-sm text-primary hover:underline">
           공개 대시보드(방문자·비용 차트) 보기 →
@@ -216,59 +196,6 @@ export default async function AdminPage({
         </CardContent>
       </Card>
 
-      {/* Pipeline B 실사용 현황 (실제 데이터) */}
-      <Card className="mb-8 border-primary/30">
-        <CardHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>Pipeline B 실사용 현황</CardTitle>
-            <Badge variant="secondary">실제 데이터</Badge>
-          </div>
-          <CardDescription>
-            지역 선택 → AI 추천(TourAPI + Knowledge) → 장소 선택 → AI 일정 생성 흐름에서{" "}
-            <strong>로그인한 실제 사용자</strong>가 발생시킨 이벤트만{" "}
-            <code className="text-xs">pipeline_b_events</code> 테이블에서 그대로 집계했어요(PHASE 13-5 정책 —
-            비로그인 익명 조회는 서로 다른 방문자를 구분할 방법이 없어 집계에서 제외해요). 아래 숫자는 목업이
-            아니며, Pipeline A(옛 유튜브/블로그 기반 일정 생성, <code className="text-xs">/plan/new</code>)의
-            데이터는 이 표에 전혀 포함되지 않아요. 검증용 테스트 계정({PIPELINE_B_TEST_USER_IDS.length}개)의 기록도
-            제외했어요.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <StatTile icon={<Compass className="h-4 w-4" />} label="AI 추천 실행" value={formatNumber(pipelineB.recommendExecuted)} sub="/places/recommend 제출" />
-            <StatTile icon={<Eye className="h-4 w-4" />} label="장소 상세 조회" value={formatNumber(pipelineB.placeDetailViewed)} sub="/places/[id] 방문" />
-            <StatTile icon={<MousePointerClick className="h-4 w-4" />} label="장소 선택" value={formatNumber(pipelineB.placeSelected)} sub="일정에 장소 추가" />
-            <StatTile icon={<CalendarPlus className="h-4 w-4" />} label="AI 일정 생성 요청" value={formatNumber(pipelineB.planGenerateRequested)} sub="/places/plan 제출" />
-            <StatTile icon={<CheckCircle2 className="h-4 w-4" />} label="완성 일정" value={formatNumber(pipelineB.itineraryCompleted)} sub={`실사용자 ${formatNumber(pipelineB.distinctUsers)}명`} />
-          </div>
-
-          {regionPivot.size > 0 && (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">지역</th>
-                    <th className="pb-2 pr-4 font-medium">AI 추천 실행</th>
-                    <th className="pb-2 pr-4 font-medium">일정 생성 요청</th>
-                    <th className="pb-2 font-medium">완성 일정</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...regionPivot.entries()].map(([code, v]) => (
-                    <tr key={code} className="border-b last:border-0">
-                      <td className="py-2 pr-4">{REGION_LABELS[code] ?? code}</td>
-                      <td className="py-2 pr-4">{formatNumber(v.recommend)}</td>
-                      <td className="py-2 pr-4">{formatNumber(v.planRequested)}</td>
-                      <td className="py-2">{formatNumber(v.completed)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>콘텐츠 검수 시트</CardTitle>
@@ -319,30 +246,5 @@ export default async function AdminPage({
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function StatTile({
-  icon,
-  label,
-  value,
-  sub,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  sub: string;
-}) {
-  return (
-    <Card hover>
-      <CardContent className="pt-6">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          {icon}
-          {label}
-        </div>
-        <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
-      </CardContent>
-    </Card>
   );
 }

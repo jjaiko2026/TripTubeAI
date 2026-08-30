@@ -2,7 +2,7 @@ import { cache } from "react";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { itineraries, placeTourismDetails, places, regions, reviews } from "@/db/schema";
-import type { Itinerary, ItineraryDay, ItineraryItem, Region, Review, TripTips } from "@/lib/types";
+import type { Itinerary, ItineraryDay, ItineraryItem, Review, TripTips } from "@/lib/types";
 import { normalizeTripPurposes, PURPOSE_LABELS, type PurposeId } from "@/lib/purposes";
 import { getHomepageDisplayStatus, isCoordinateReliable, type HomepageDisplay } from "@/lib/tour-api/quality";
 import { getKnowledgeDerivedPlaceById } from "@/db/knowledge-queries";
@@ -290,23 +290,6 @@ export interface PlaceWithDetails {
   /** place_tourism_details.detail_data 원본(유형별 필드가 달라 공통 스키마로 만들지 않음,
    *  PHASE3H §11.1). 해당 place의 상세정보가 없으면 null. */
   detailData: unknown | null;
-}
-
-/**
- * PHASE 13-6 — regionCode(regions.code)로 그 지역이 국내/해외인지 조회한다. regions.domesticOverseas
- * ("domestic"|"overseas")를 TripRequest.region("국내"|"해외") 축으로 변환하는 유일한 지점으로
- * 둔다 — destination 이름 추론이나 별도 분류 체계를 새로 만들지 않고, 이미 존재하는 regions
- * 테이블의 값을 단일 진실 소스로 쓴다. regionCode가 존재하지 않으면(방어적 상황) 기존
- * actions.ts의 하드코딩과 동일한 안전 기본값 "국내"로 대체한다.
- */
-export async function getRegionDomesticOverseas(regionCode: string): Promise<Region> {
-  const db = getDb();
-  const rows = await db
-    .select({ domesticOverseas: regions.domesticOverseas })
-    .from(regions)
-    .where(eq(regions.code, regionCode))
-    .limit(1);
-  return rows[0]?.domesticOverseas === "overseas" ? "해외" : "국내";
 }
 
 /**

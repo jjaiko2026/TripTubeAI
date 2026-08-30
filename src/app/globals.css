@@ -115,13 +115,6 @@
 }
 
 @layer components {
-  /* 여행 설렘을 담은 브랜드 그라데이션 — 헤드라인 키워드와 강조 텍스트에 */
-  .text-gradient-brand {
-    background-image: linear-gradient(100deg, var(--brand), var(--brand-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
   /* CTA·로고·아이콘 칩 배경. 위에 흰 글자를 얹으므로 양 끝 모두 WCAG AA(4.5:1)를
      넘도록 살짝 어둡게 조정했다 — 선명함은 유지하면서 대비 확보. */
   .bg-brand-gradient {
