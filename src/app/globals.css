@@ -75,11 +75,12 @@
   --border: oklch(0.9 0.008 240);
   --input: oklch(0.9 0.008 240);
   --ring: var(--brand);
-  --chart-1: oklch(0.58 0.16 222);
-  --chart-2: oklch(0.55 0.16 265);
-  --chart-3: oklch(0.75 0.15 75);
-  --chart-4: oklch(0.62 0.19 15);
-  --chart-5: oklch(0.6 0.12 320);
+  /* 브랜드 조율 카테고리 팔레트: 바다블루 → 틸 → 앰버 → 코럴 → 바이올렛 */
+  --chart-1: oklch(0.55 0.15 235);
+  --chart-2: oklch(0.64 0.12 195);
+  --chart-3: oklch(0.75 0.14 75);
+  --chart-4: oklch(0.63 0.19 25);
+  --chart-5: oklch(0.57 0.16 300);
   --radius: 0.9rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -113,11 +114,12 @@
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
   --ring: var(--brand);
-  --chart-1: oklch(0.72 0.15 222);
-  --chart-2: oklch(0.68 0.16 265);
-  --chart-3: oklch(0.8 0.15 75);
-  --chart-4: oklch(0.68 0.19 15);
-  --chart-5: oklch(0.7 0.13 320);
+  /* 다크: 라이트와 동일 색상환, 명도만 올려 어두운 배경에서 선명하게 */
+  --chart-1: oklch(0.7 0.14 235);
+  --chart-2: oklch(0.74 0.11 195);
+  --chart-3: oklch(0.8 0.13 75);
+  --chart-4: oklch(0.7 0.17 25);
+  --chart-5: oklch(0.7 0.15 300);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

@@ -18,7 +18,14 @@ import {
 import type { DestinationCost } from "@/lib/types";
 import { formatKRW, formatNumber } from "@/lib/format";
 
-const PALETTE = ["#0d9488", "#6366f1", "#f59e0b", "#e11d48", "#a855f7", "#0891b2"];
+// 색은 globals.css의 --chart-1~5 토큰을 그대로 사용한다 — 브랜드 팔레트 조율 + 다크모드 자동 반영.
+const PALETTE = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+];
 
 export function GenerationTrendChart({ data }: { data: { date: string; count: number }[] }) {
   const chartData = data.slice(-30).map((d) => ({ date: d.date.slice(5), 일정생성: d.count }));
