@@ -39,10 +39,10 @@ export function RecentItineraries({
         {itineraries.map((itinerary) => (
           <div
             key={itinerary.id}
-            className="group relative rounded-xl border bg-card p-4 ring-1 ring-foreground/10 transition-colors hover:border-primary/50 hover:bg-accent/40"
+            className="group relative rounded-xl border bg-card p-4 shadow-sm shadow-foreground/5 ring-1 ring-foreground/10 transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-accent/40 hover:shadow-md motion-reduce:hover:translate-y-0"
           >
             <Link href={`/plan/result/${itinerary.id}`} className="flex flex-col gap-2">
-              <div className="flex items-center gap-1.5 pr-6 font-medium">
+              <div className="flex items-center gap-1.5 pr-6 font-semibold">
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-primary" />
                 <span className="truncate">{itinerary.destinationName}</span>
                 <ArrowRight className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />

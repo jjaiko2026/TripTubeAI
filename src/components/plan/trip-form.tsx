@@ -221,8 +221,10 @@ export function TripForm({
                     type="button"
                     onClick={() => onChange({ ...value, purposes: cyclePurposePriority(value.purposes, id) })}
                     className={cn(
-                      "flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                      current ? "border-primary bg-accent" : "hover:bg-accent/50"
+                      "flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-all",
+                      current
+                        ? "border-primary bg-accent font-medium shadow-sm ring-1 ring-primary/30"
+                        : "hover:-translate-y-px hover:border-primary/40 hover:bg-accent/50"
                     )}
                   >
                     <span>{PURPOSE_LABELS[id]}</span>
@@ -293,7 +295,12 @@ export function TripForm({
             </div>
           )}
 
-          <Button type="submit" className="w-full" size="lg" disabled={isAmbiguousUnresolved}>
+          <Button
+            type="submit"
+            className="w-full text-base shadow-lg shadow-primary/30"
+            size="lg"
+            disabled={isAmbiguousUnresolved}
+          >
             <Sparkles className="h-4 w-4" /> AI 여행 일정 만들기
           </Button>
         </form>

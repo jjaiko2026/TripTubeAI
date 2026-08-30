@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { Sparkles } from "lucide-react";
 import { TripPlanner } from "@/components/plan/trip-planner";
 import { RecentItineraries } from "@/components/plan/recent-itineraries";
 import { getItinerary, getRecentItinerariesForUser } from "@/db/queries";
@@ -24,7 +25,10 @@ export default async function PlanNewPage({
         <RecentItineraries itineraries={recentItineraries} />
 
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <p className="flex items-center justify-center gap-1.5 text-sm font-bold tracking-wide text-primary uppercase">
+            <Sparkles className="h-4 w-4" /> Trip + YouTube + AI
+          </p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
             어떤 여행을 계획하고 계신가요?
           </h1>
           <p className="mt-2 text-muted-foreground">
