@@ -26,7 +26,7 @@ export function TripTipsCard({ tripTips }: { tripTips: TripTips }) {
             (§lib/trip-tips.ts generateTripTipsFallback), 그게 실제 AI가 생성한 맞춤 정보인 것처럼
             보이면 안 되므로 명확히 구분해 알린다. */}
         {tripTips.usedFallback && (
-          <p className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
             일부 여행 정보는 일시적으로 제공이 어려워 일반 안내로 표시됩니다.
           </p>
         )}

@@ -53,6 +53,11 @@
 }
 
 :root {
+  /* 이 서비스는 라이트 전용이다. 다크 테마는 토글도 next-themes도 없어 한 번도 렌더된 적이
+     없었고(죽은 코드였음), 밝은 여행 사진·영상이 핵심이라 의도적으로 라이트만 유지한다.
+     6번째 줄 @custom-variant dark 선언은 남겨둔다 — 지우면 Tailwind가 prefers-color-scheme
+     기본값으로 돌아가 흩어진 dark: 유틸이 되레 활성화된다. */
+  color-scheme: light;
   /* 여행 × 유튜브 — 바다빛 블루(brand) + 유튜브 코럴(brand-2) + 노을 앰버(brand-3) */
   --brand: oklch(0.58 0.16 222);
   --brand-2: oklch(0.62 0.21 25);
@@ -90,44 +95,6 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --brand: oklch(0.72 0.15 222);
-  --brand-2: oklch(0.7 0.19 25);
-  --brand-3: oklch(0.8 0.14 70);
-  --background: oklch(0.16 0.015 255);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.212 0.014 255);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.212 0.014 255);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: var(--brand);
-  --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.3 0.05 185);
-  --accent-foreground: oklch(0.95 0.02 185);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: var(--brand);
-  /* 다크: 라이트와 동일 색상환, 명도만 올려 어두운 배경에서 선명하게 */
-  --chart-1: oklch(0.7 0.14 235);
-  --chart-2: oklch(0.74 0.11 195);
-  --chart-3: oklch(0.8 0.13 75);
-  --chart-4: oklch(0.7 0.17 25);
-  --chart-5: oklch(0.7 0.15 300);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
 }
 
 @layer base {
