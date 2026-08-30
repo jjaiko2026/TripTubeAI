@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ReviewCard } from "@/components/reviews/review-card";
 import { HeroVideoBackground } from "@/components/hero-video-background";
+import { Reveal } from "@/components/reveal";
 import { Show, SignInButton } from "@clerk/nextjs";
 import { getReviews } from "@/db/queries";
 import { DESTINATION_COSTS } from "@/lib/mock/stats";
@@ -159,7 +160,7 @@ export default async function Home() {
         <h2 className="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">
           여행 계획, 이런 경험 있으시죠?
         </h2>
-        <div className="mt-10 grid gap-4 sm:grid-cols-3">
+        <Reveal className="mt-10 grid gap-4 sm:grid-cols-3">
           {PROBLEMS.map((p) => (
             <Card key={p.title} hover>
               <CardContent className="pt-6">
@@ -171,7 +172,7 @@ export default async function Home() {
               </CardContent>
             </Card>
           ))}
-        </div>
+        </Reveal>
       </section>
 
       {/* How it works */}
@@ -183,7 +184,7 @@ export default async function Home() {
           <h2 className="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">
             TripTube AI가 해결하는 방법
           </h2>
-          <div className="mt-10 grid gap-6 sm:grid-cols-4">
+          <Reveal className="mt-10 grid gap-6 sm:grid-cols-4">
             {STEPS.map((s, idx) => (
               <div key={s.title} className="group relative text-center">
                 <div className="bg-brand-gradient mx-auto flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-md shadow-primary/30 transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-105">
@@ -196,7 +197,7 @@ export default async function Home() {
                 )}
               </div>
             ))}
-          </div>
+          </Reveal>
           <div className="mt-10 text-center">
             <Button render={<Link href="/plan/example" />} variant="outline">
               예시 일정 보기 <ArrowRight className="h-4 w-4" />
@@ -217,7 +218,7 @@ export default async function Home() {
           </Button>
         </div>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <Reveal className="mt-8 grid gap-4 sm:grid-cols-3">
           <Card hover>
             <CardContent className="pt-6">
               <span className="bg-brand-gradient flex h-9 w-9 items-center justify-center rounded-lg text-white shadow-sm shadow-primary/25">
@@ -245,7 +246,7 @@ export default async function Home() {
               <p className="text-sm text-muted-foreground">지원 여행지 (자유 입력 가능)</p>
             </CardContent>
           </Card>
-        </div>
+        </Reveal>
 
         <Card className="mt-4">
           <CardContent className="pt-6">
@@ -289,11 +290,11 @@ export default async function Home() {
               후기 더보기 <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <Reveal className="mt-8 grid gap-4 sm:grid-cols-3">
             {reviews.slice(0, 3).map((r) => (
               <ReviewCard key={r.id} review={r} />
             ))}
-          </div>
+          </Reveal>
         </div>
       </section>
 
