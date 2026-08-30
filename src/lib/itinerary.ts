@@ -1327,8 +1327,8 @@ async function loadRegionalContext(destinationName: string): Promise<{
 
 export async function generateItinerary(
   request: TripRequest,
-  // PHASE 2 STEP 2 — /places/plan(§generateItineraryFromPlacesAction)이 넘기는 mustInclude 신호.
-  // 생략하면(기존 /plan/new 경로 전부) 완전히 이전과 동일하게 동작한다.
+  // mustInclude 신호 — 호출부가 특정 placeId를 반드시 포함하도록 지시할 때 쓴다.
+  // 생략하면(현재 모든 호출부) 완전히 이전과 동일하게 동작한다.
   options?: { mustIncludePlaceIds?: string[] }
 ): Promise<Itinerary> {
   const mustIncludePlaceIds = options?.mustIncludePlaceIds ?? [];
