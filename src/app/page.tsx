@@ -81,6 +81,7 @@ export default async function Home() {
               <Button
                 render={<Link href="/plan/new" />}
                 size="lg"
+                variant="brand"
                 className="shadow-lg shadow-primary/40"
               >
                 <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
@@ -88,7 +89,7 @@ export default async function Home() {
             </Show>
             <Show when="signed-out">
               <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
-                <Button size="lg" className="shadow-lg shadow-primary/40">
+                <Button size="lg" variant="brand" className="shadow-lg shadow-primary/40">
                   <Sparkles className="h-4 w-4" /> 무료로 일정 만들기
                 </Button>
               </SignInButton>
