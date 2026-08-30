@@ -473,6 +473,13 @@ v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항
 - **라이트 전용 확정.** 작동한 적 없던 `.dark` 블록·`dark:` 유틸 제거, `color-scheme: light` 명시. 다크 모드는 필요 시 토글 + 전용 QA로 별도 기능화.
 - 대비: `.bg-brand-gradient` 위 흰 글자가 WCAG AA(4.5:1)를 넘도록 그라데이션 양 끝을 조정.
 
+### 27.5 Google Sheets 검수 연동 — 서비스 계정 인증으로 전환
+
+- 기존 OAuth 리프레시 토큰 방식은 동의 화면이 "테스트" 상태면 토큰이 **7일마다 만료**돼 `/admin` 시트 내보내기가 주기적으로 실패했다.
+- `src/lib/sheets/client.ts` `getAccessToken()`을 **인증 방식 자동 선택**으로 변경: `GOOGLE_SA_CLIENT_EMAIL` + `GOOGLE_SA_PRIVATE_KEY`가 있으면 서비스 계정 JWT(`node:crypto` RS256, 라이브러리 없음)로, 없으면 기존 OAuth로 폴백.
+- 서비스 계정 방식은 토큰 만료·동의 화면·앱 게시가 전부 불필요. 스프레드시트를 서비스 계정 이메일에 "편집자"로 공유하면 끝. (조직 정책 `iam.disableServiceAccountKeyCreation`은 프로젝트 레벨 재정의로 해제)
+- §9.2의 KNOWLEDGE_REVIEW / CONTENT_MASTER 내보내기·가져오기 로직 자체는 무변경 — 토큰 획득 계층만 교체.
+
 ---
 
 ## 부록 A — v2.5 → v3.0 핵심 차이
