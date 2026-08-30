@@ -194,8 +194,8 @@ Knowledge는 단순 검색 결과가 아니라 **"TripTube AI가 여행 계획�
 |---|---|---|
 | `getConfirmedRegionalKnowledge(regionCode)` | 일정 생성 AI 프롬프트의 `regionalKnowledge` 참고자료 | status=confirmed, videoId 경로, 지역당 최대 10 |
 | `getKnowledgeDerivedPlacesByRegion(regionCode)` | 추천/일정의 장소 후보(`verifiedPlaces`)에 병합 | confirmed + publishable=yes + place_id 연결 |
-| `getConfirmedRegionalKnowledgeByType(regionCode, type)` | `/places` 검수된 카드(맛집/여행지/숙소/쇼핑/체험) | confirmed + publishable=yes |
-| `getConfirmedRegionalCourses(regionCode)` | `/places` 검수된 코스 카드 | confirmed + type=course |
+| ~~`getConfirmedRegionalKnowledgeByType`~~ | `/places` 검수 카드 전용 → 함수 삭제 (§27.1) | — |
+| ~~`getConfirmedRegionalCourses`~~ | `/places` 검수 코스 카드 전용 → 함수 삭제 (§27.1) | — |
 
 ### 9.4 v3.0에서의 위치
 
