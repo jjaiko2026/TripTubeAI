@@ -22,18 +22,22 @@ export async function SiteHeader() {
     : NAV_LINKS;
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-lg supports-[backdrop-filter]:bg-background/65">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <Link href="/" className="flex items-center gap-2 font-bold">
+          <span className="bg-brand-gradient flex h-8 w-8 items-center justify-center rounded-lg text-white shadow-sm shadow-primary/30">
             <Plane className="h-4 w-4" />
           </span>
           <span className="text-lg tracking-tight">TripTube AI</span>
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
+        <nav className="hidden items-center gap-7 text-sm font-medium text-foreground/65 md:flex">
           {navLinks.map((link) => (
-            <Link key={link.href} href={link.href} className="transition-colors hover:text-foreground">
+            <Link
+              key={link.href}
+              href={link.href}
+              className="transition-colors hover:text-foreground"
+            >
               {link.label}
             </Link>
           ))}

@@ -16,7 +16,9 @@ export function HeroVideoBackground({ video }: { video: HeroDestinationVideo }) 
         tabIndex={-1}
         className="pointer-events-none absolute left-1/2 top-1/2 h-[56.25vw] min-h-full w-[177.78vh] min-w-full -translate-x-1/2 -translate-y-1/2"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/55 to-background" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/50 to-background" />
+      {/* 바다빛 컬러 그레이딩 — 여행 영상 위에 은은한 브랜드 색을 얹는다 */}
+      <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_20%_0%,color-mix(in_oklch,var(--brand),transparent_55%),transparent_60%)] mix-blend-soft-light" />
       <div className="absolute inset-0 bg-black/10" />
 
       <Link
