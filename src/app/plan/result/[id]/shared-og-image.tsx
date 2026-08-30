@@ -44,7 +44,8 @@ export async function renderResultOgImage(id: string) {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: "72px",
-          background: "linear-gradient(135deg, #0f766e 0%, #115e59 55%, #134e4a 100%)",
+          // 브랜드 바다빛 블루 그라데이션 (globals.css --brand 계열). satori는 hex가 가장 안전.
+          background: "linear-gradient(135deg, #1f74c9 0%, #17598f 55%, #113f66 100%)",
           color: "white",
           fontFamily: "Noto Sans KR",
         }}
