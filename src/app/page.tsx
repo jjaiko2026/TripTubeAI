@@ -128,7 +128,7 @@ export default async function Home() {
             </Card>
             <Card className="card-lift bg-accent/40 ring-primary/40">
               <CardContent className="pt-5">
-                <p className="text-gradient-brand mb-3 text-xs font-bold tracking-wide">
+                <p className="mb-3 text-xs font-bold tracking-wide text-primary">
                   AFTER — TripTube AI
                 </p>
                 <div className="space-y-2 text-xs">
