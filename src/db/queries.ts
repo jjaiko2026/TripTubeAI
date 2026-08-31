@@ -29,6 +29,7 @@ export async function saveItinerary(itinerary: Itinerary, userId: string | null)
       estimatedTotalCost: itinerary.estimatedTotalCost,
       currency: itinerary.currency,
       tripTips: itinerary.tripTips,
+      usedFallback: itinerary.usedFallback ?? false,
     })
     .returning({ id: itineraries.id });
   return row.id;
@@ -61,6 +62,8 @@ export async function updateItinerary(id: string, userId: string, itinerary: Iti
       estimatedTotalCost: itinerary.estimatedTotalCost,
       currency: itinerary.currency,
       tripTips: itinerary.tripTips,
+      // 재생성으로 정상 일정이 되면 false로 덮여 "지금 다시 생성" CTA가 사라진다.
+      usedFallback: itinerary.usedFallback ?? false,
     })
     .where(and(eq(itineraries.id, id), eq(itineraries.userId, userId)))
     .returning({ id: itineraries.id });
@@ -147,6 +150,8 @@ export const getItinerary = cache(async function getItinerary(
     generatedAt: row.createdAt.toISOString(),
     // 이 컬럼이 생기기 전에 저장된 일정은 null이라 빈 값으로 대체합니다.
     tripTips: (row.tripTips as TripTips | null) ?? EMPTY_TRIP_TIPS,
+    // 이 컬럼 이전 일정은 null → false로 취급(결과 페이지 "지금 다시 생성" CTA 판단용).
+    usedFallback: row.usedFallback ?? false,
   };
 });
 

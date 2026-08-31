@@ -56,14 +56,14 @@ export async function createItineraryAction(formData: FormData) {
   if (editFrom && saveMode === "replace" && userId) {
     const replaced = await updateItinerary(editFrom, userId, itinerary);
     if (replaced) {
-      redirect(itinerary.usedFallback ? `/plan/result/${editFrom}?fallback=1` : `/plan/result/${editFrom}`);
+      redirect(`/plan/result/${editFrom}`);
     }
   }
 
   const id = await saveItinerary(itinerary, userId ?? null);
-  // PHASE 3 — usedFallback은 saveItinerary()에 저장되지 않는 휘발성 신호라, 이 리다이렉트
-  // 안에서만 전달한다(§lib/types.ts Itinerary.usedFallback).
-  redirect(itinerary.usedFallback ? `/plan/result/${id}?fallback=1` : `/plan/result/${id}`);
+  // usedFallback은 이제 itineraries.used_fallback에 저장되므로, 결과 페이지가 재방문 시에도
+  // 스스로 폴백 여부를 알고 "지금 다시 생성" CTA를 띄운다(리다이렉트 쿼리로 전달할 필요 없음).
+  redirect(`/plan/result/${id}`);
 }
 
 export async function deleteItineraryAction(formData: FormData) {
@@ -167,6 +167,30 @@ export async function reviseItineraryDayAction(formData: FormData) {
 
   revalidatePath(`/plan/result/${itineraryId}`);
   redirect(`/plan/result/${itineraryId}${failed ? "?revise=failed" : "?revise=done"}`);
+}
+
+/**
+ * 결과 페이지의 "지금 다시 생성" CTA. AI 장애로 결정론적 폴백(usedFallback=true)으로 저장된
+ * 일정을, 저장된 request 그대로 다시 생성해 제자리(updateItinerary)에서 교체한다. (id, userId)
+ * 소유자만 가능. 재생성 결과가 여전히 폴백이면 ?regen=stillbusy로, 정상 생성되면 ?regen=done으로
+ * 돌려보낸다. generateItinerary()는 자체 폴백이 있어 던지지 않으므로 원본이 훼손될 일은 없다.
+ */
+export async function regenerateItineraryAction(formData: FormData) {
+  const { userId } = await auth();
+  if (!userId) return;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!UUID_RE.test(id)) return;
+
+  const existing = await getItinerary(id, userId);
+  if (!existing) return;
+
+  const regenerated = await generateItinerary(existing.request);
+  const ok = await updateItinerary(id, userId, regenerated);
+
+  revalidatePath(`/plan/result/${id}`);
+  const outcome = !ok ? "failed" : regenerated.usedFallback ? "stillbusy" : "done";
+  redirect(`/plan/result/${id}?regen=${outcome}`);
 }
 
 export async function createReviewAction(formData: FormData) {

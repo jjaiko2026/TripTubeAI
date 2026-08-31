@@ -15,6 +15,7 @@ import { fetchNaverBlogs } from "@/lib/real/naver-blog";
 import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
 import { getCachedSources, saveCachedSources } from "@/db/source-cache";
+import { getCachedPlan, saveCachedPlan } from "@/db/itinerary-plan-cache";
 import { getRejectedSourceIds } from "@/db/content-moderation";
 import { tryAcquireSearchLock, releaseSearchLock } from "@/db/search-lock";
 import { consumeYoutubeQuota } from "@/db/rate-limit";
@@ -1344,12 +1345,9 @@ export async function generateItinerary(
   // 일정 하나가 통째로 fallback으로 떨어지면(특히 캐시되는 공개 예시 페이지에서) 지리적으로
   // 뒤죽박죽인 동선이 방문자에게 그대로 노출되므로, 일시적 오류(네트워크/쿼터 스파이크)에
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
-  let plan: PlanDay[];
-  // PHASE 3 — 2회 재시도 다 실패해 결정론적 fallback으로 넘어간 경우에만 true. 정상 경로는
-  // 절대 건드리지 않는다(선언만 하고 fallback 분기 안에서만 대입).
-  let usedFallback = false;
-  try {
-    plan = await generateItineraryWithAI(
+  const planCacheKey = `${requestSeedKey(request)}::must=${[...mustIncludePlaceIds].sort().join(",")}`;
+  const runAi = () =>
+    generateItineraryWithAI(
       request,
       destination,
       days,
@@ -1358,22 +1356,34 @@ export async function generateItinerary(
       regionalKnowledge,
       mustIncludePlaceIds
     );
+
+  let plan: PlanDay[];
+  // 2회 재시도가 다 실패하고, 같은 조건으로 전에 성공한 캐시(itinerary_plan_cache)도 없을 때만
+  // true. 정상 경로/캐시 재사용 경로는 절대 건드리지 않는다.
+  let usedFallback = false;
+  try {
+    plan = await runAi();
+    await saveCachedPlan(planCacheKey, plan).catch((e) => console.error("plan cache write failed:", e));
   } catch (firstError) {
     console.error("AI itinerary generation failed, retrying once:", firstError);
     try {
-      plan = await generateItineraryWithAI(
-        request,
-        destination,
-        days,
-        verifiedPlaces,
-        placeRegionLabelById,
-        regionalKnowledge,
-        mustIncludePlaceIds
-      );
+      plan = await runAi();
+      await saveCachedPlan(planCacheKey, plan).catch((e) => console.error("plan cache write failed:", e));
     } catch (secondError) {
-      console.error("AI itinerary generation failed again, using fallback plan:", secondError);
-      plan = generateItineraryFallback(request, destination, days);
-      usedFallback = true;
+      console.error("AI itinerary generation failed again:", secondError);
+      // #4 — 같은 조건으로 전에 성공한 일정 뼈대가 있으면 결정론적 fallback보다 먼저 쓴다
+      // (AI 장애 중 같은 요청을 다시 넣어도 "매번 똑같은 폴백"이 아니라 실제 일정을 돌려주기 위함).
+      const cachedPlan = await getCachedPlan<PlanDay[]>(planCacheKey).catch((e) => {
+        console.error("plan cache read failed:", e);
+        return null;
+      });
+      if (cachedPlan && cachedPlan.length > 0) {
+        console.error("AI unavailable — serving a cached plan from a previous successful generation");
+        plan = cachedPlan;
+      } else {
+        plan = generateItineraryFallback(request, destination, days);
+        usedFallback = true;
+      }
     }
   }
 

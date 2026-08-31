@@ -10,6 +10,7 @@ import { ItineraryPdfButton } from "@/components/itinerary/itinerary-pdf-button"
 import { ShareItineraryButton } from "@/components/plan/share-itinerary-button";
 import { WriteReviewDialog } from "@/components/reviews/write-review-dialog";
 import { DeleteItineraryButton } from "@/components/plan/delete-itinerary-button";
+import { RegenerateItineraryButton } from "@/components/plan/regenerate-itinerary-button";
 import { getItinerary } from "@/db/queries";
 import { monthLabel } from "@/lib/format";
 
@@ -43,17 +44,15 @@ export default async function PlanResultPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ fallback?: string; revise?: string }>;
+  searchParams: Promise<{ revise?: string; regen?: string }>;
 }) {
   const { id } = await params;
-  // PHASE 3 — generateItinerary()의 usedFallback은 saveItinerary()에 저장되지 않는 휘발성
-  // 신호라(§lib/types.ts), 생성 직후의 리다이렉트 쿼리로만 전달된다. 새로고침/재방문 시에는
-  // 이 파라미터가 없어 배너가 다시 뜨지 않는다 — 의도된 동작(영구 표시가 아니라 그 순간의
-  // 재시도 유도용).
-  const { fallback, revise } = await searchParams;
-  const showFallbackNotice = fallback === "1";
+  const { revise, regen } = await searchParams;
   // PRD v3.0 §16 — 일정 수정(reviseItineraryDayAction) 직후의 1회성 결과 알림.
   const reviseNotice = revise === "failed" ? "failed" : revise === "done" ? "done" : null;
+  // "지금 다시 생성"(regenerateItineraryAction) 직후의 1회성 결과 알림.
+  const regenNotice =
+    regen === "done" ? "done" : regen === "stillbusy" ? "stillbusy" : regen === "failed" ? "failed" : null;
   // 결과 페이지는 의도적으로 소유자 무관 공개 조회다(공유 링크 지원, src/db/queries.ts
   // getItinerary() 주석 참고) — 이 동작은 바꾸지 않는다. 일정 항목 삭제 UI를 보여줄지만
   // 별도로 소유자 일치 여부를 확인한다(같은 getItinerary()를 userId까지 넘겨 한 번 더 호출).
@@ -64,6 +63,9 @@ export default async function PlanResultPage({
   ]);
   if (!itinerary) notFound();
   const canManage = ownedItinerary !== null;
+  // AI 생성이 다 실패해 결정론적 폴백 뼈대로 저장된 일정(itineraries.used_fallback). 새로고침/
+  // 재방문에도 계속 남아, 소유자에게는 "지금 다시 생성" CTA를 띄운다.
+  const isFallbackItinerary = itinerary.usedFallback === true;
 
   const { request } = itinerary;
   const pdfTitle =
@@ -104,10 +106,34 @@ export default async function PlanResultPage({
         </div>
       </div>
 
-      {showFallbackNotice && (
+      {isFallbackItinerary && (
+        <div className="mb-6 flex flex-col gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              일시적으로 AI 생성이 어려워 기본 템플릿으로 구성됐어요.
+              {canManage ? " 잠시 후 아래 버튼으로 다시 생성해 보세요." : " 잠시 후 다시 시도해 보세요."}
+            </p>
+          </div>
+          {canManage && <RegenerateItineraryButton id={id} />}
+        </div>
+      )}
+
+      {regenNotice === "done" && (
+        <div className="mb-6 rounded-xl border bg-accent/40 px-4 py-3 text-sm">
+          <p>같은 조건으로 일정을 다시 생성했어요.</p>
+        </div>
+      )}
+      {regenNotice === "stillbusy" && (
+        <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>AI가 아직 혼잡해 이번에도 기본 템플릿으로 구성됐어요. 잠시 후 다시 시도해 주세요.</p>
+        </div>
+      )}
+      {regenNotice === "failed" && (
         <div className="mb-6 flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>일시적으로 AI 생성이 어려워 기본 템플릿으로 구성됐어요. 위 &apos;조건 다시 입력&apos;으로 다시 시도해 보세요.</p>
+          <p>일정을 다시 생성하지 못했어요. 기존 일정은 그대로 유지됐어요.</p>
         </div>
       )}
 
