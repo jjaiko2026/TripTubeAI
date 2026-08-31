@@ -150,11 +150,14 @@ export const getItinerary = cache(async function getItinerary(
   };
 });
 
-export async function getReviews(): Promise<Review[]> {
+export async function getReviews(currentUserId?: string | null): Promise<Review[]> {
   const db = getDb();
   const rows = await db.select().from(reviews).orderBy(desc(reviews.createdAt));
   return rows.map((row) => ({
     id: row.id,
+    // 수정 권한 판단에만 쓰는 값이라, 조회자 본인 후기에만 userId를 싣는다 —
+    // 다른 작성자의 Clerk id를 클라이언트로 내보내지 않는다.
+    userId: row.userId && row.userId === currentUserId ? row.userId : null,
     author: row.author,
     destination: row.destination,
     rating: row.rating,
@@ -183,6 +186,32 @@ export async function createReview(review: {
 }) {
   const db = getDb();
   await db.insert(reviews).values(review);
+}
+
+/**
+ * 본인이 쓴 후기 수정. (id, userId) 소유권이 맞을 때만 UPDATE하고, 맞으면 true를 반환한다
+ * (updateItinerary와 같은 패턴). userId가 null인 비로그인 후기는 소유권을 증명할 수 없어
+ * 수정 대상이 아니다. totalCost/itineraryId 등 폼에 없는 컬럼은 건드리지 않는다.
+ */
+export async function updateReview(
+  id: string,
+  userId: string,
+  fields: {
+    author: string;
+    destination: string;
+    rating: number;
+    title: string;
+    content: string;
+    nights: number;
+  },
+): Promise<boolean> {
+  const db = getDb();
+  const updated = await db
+    .update(reviews)
+    .set(fields)
+    .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
+    .returning({ id: reviews.id });
+  return updated.length > 0;
 }
 
 export interface DashboardData {
