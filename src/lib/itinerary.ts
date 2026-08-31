@@ -27,11 +27,14 @@ import {
   type RegionalKnowledgeItem,
 } from "@/db/knowledge-queries";
 import { getDetailFields } from "@/lib/detail-field-labels";
-import { smartModel } from "@/lib/ai/model";
+import { smartModels } from "@/lib/ai/model";
+import { generateTextWithFallback } from "@/lib/ai/generate";
 
-// PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts).
-const AI_MODEL = smartModel;
+// PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts). 앞에서부터 순서대로 시도한다.
+const AI_MODELS = smartModels;
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
+// 결정론적 폴백에서 카탈로그가 소진돼도 한 날짜에 최소 이만큼은 채운다(그 이하로는 슬롯을 비운다).
+const MIN_FALLBACK_ITEMS = 2;
 
 /**
  * Pipeline B(TourAPI+Knowledge)가 실제 데이터를 가진 지역만 여기 매핑한다(PHASE 14-0 —
@@ -245,8 +248,8 @@ async function generateItineraryWithAI(
   }));
   const mode = arrivalMode(request, destination);
 
-  const { output } = await generateText({
-    model: AI_MODEL,
+  const { output } = await generateTextWithFallback(AI_MODELS, (model) => generateText({
+    model,
     output: Output.object({ schema: planSchema }),
     system:
       "당신은 TripTube AI의 여행 일정 플래너입니다. 사용자의 여행 조건과 목적지 대표 활동 목록을 참고해 " +
@@ -384,7 +387,7 @@ async function generateItineraryWithAI(
       ].filter((v): v is string => v !== null),
       activityCatalog,
     }),
-  });
+  }));
 
   if (output.days.length === 0 || output.days.every((d) => d.items.length === 0)) {
     throw new Error("AI returned an empty itinerary plan");
@@ -484,38 +487,35 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
     for (let offset = 1; picked.length < slotsForDay.length && offset < areaGroups.length; offset++) {
       picked = [...picked, ...takeFromArea(areaIndex + offset, slotsForDay.length - picked.length)];
     }
-    // 그래도 부족하면(활동 카탈로그 자체가 여행 일수보다 작은 극단적인 경우) 이미 쓴 활동을
-    // 재사용합니다. PHASE 5 — 예전엔 이 재사용이 항상 pool[0]부터 시작해, 카탈로그가 소진된
-    // 이후의 모든 날짜가 시간·순서까지 완전히 똑같아지는 문제가 실제 데이터에서 확인됐다
-    // (예: genericDestination()은 활동이 정확히 5개뿐이라 2일차부터 매일 동일했음). day를
-    // 시드로 회전 시작점을 옮겨 매 실행이 아니라 날짜별로 결정론적으로 다른 지점부터
-    // 순환하게 하고, 이 날짜에서 이미 고른 활동과는 먼저 안 겹치게 채운다. 그래도 슬롯이
-    // 남으면(활동 수 자체가 하루 슬롯 수보다 적은 극단적인 경우) 그때만 중복을 허용해
-    // 일정이 비지 않도록 보장한다.
+    // 서로 다른 area가 다 소진되면(활동 카탈로그가 여행 일수보다 짧은 경우) 이미 쓴 활동을
+    // 재사용한다. PHASE 5 — 예전엔 매 날짜가 pool 전체를 순서만 바꿔 담아 "매일 같은 목록"이
+    // 됐다. 이제 날짜마다 하루치(slotsForDay.length)만큼 회전 시작점을 옮겨, 각 폴백 날짜가
+    // pool의 서로 다른 구간을 담게 한다. 같은 날 안에서는 절대 중복시키지 않고, 그래도 부족하면
+    // 그 날은 슬롯 수보다 짧게 둔다 — 같은 항목으로 도배하는 것보다 낫다(최소 MIN_FALLBACK_ITEMS개는 보장).
     if (picked.length < slotsForDay.length) {
       const pickedTitles = new Set(picked.map((a) => a.title));
-      const rotationStart = (day - 1) % pool.length;
+      const rotationStart = ((day - 1) * slotsForDay.length) % pool.length;
       for (let step = 0; picked.length < slotsForDay.length && step < pool.length; step++) {
         const candidate = pool[(rotationStart + step) % pool.length];
         if (pickedTitles.has(candidate.title)) continue;
         picked.push(candidate);
         pickedTitles.add(candidate.title);
       }
-      for (let i = 0; picked.length < slotsForDay.length; i++) {
-        picked.push(pool[(rotationStart + i) % pool.length]);
+      // pool 자체가 하루 최소 항목 수보다도 적은 극단적 경우에만 앞에서부터 한 번 더 훑는다.
+      for (let i = 0; picked.length < MIN_FALLBACK_ITEMS && i < pool.length; i++) {
+        if (pickedTitles.has(pool[i].title)) continue;
+        picked.push(pool[i]);
+        pickedTitles.add(pool[i].title);
       }
     }
 
-    const items: PlanItem[] = slotsForDay.map((time, i) => {
-      const activity = picked[i];
-      return {
-        time,
-        title: activity.title,
-        description: activity.description,
-        tags: activity.tags,
-        geocodeQuery: activity.title,
-      };
-    });
+    const items: PlanItem[] = picked.slice(0, slotsForDay.length).map((activity, i) => ({
+      time: DAY_TIME_SLOTS[i],
+      title: activity.title,
+      description: activity.description,
+      tags: activity.tags,
+      geocodeQuery: activity.title,
+    }));
 
     // 그 날 실제로 활동을 뽑아온 area 이름을 그대로 짧은 키워드로 씁니다(순서도 박스용).
     const areaName =
@@ -1436,8 +1436,8 @@ async function regenerateSingleDay(
   const arrivalWord = mode === "ferry" ? "항구/여객터미널 도착" : mode === "airport" ? "공항 도착" : "도착";
   const departureWord = mode === "ferry" ? "항구/여객터미널로 출발" : mode === "airport" ? "공항으로 출발" : "출발(귀가 이동)";
 
-  const { output } = await generateText({
-    model: AI_MODEL,
+  const { output } = await generateTextWithFallback(AI_MODELS, (model) => generateText({
+    model,
     output: Output.object({ schema: singleDaySchema }),
     system:
       "당신은 TripTube AI의 여행 일정 플래너입니다. 이미 완성된 여행 일정 중 사용자가 지정한 하루치만, " +
@@ -1509,7 +1509,7 @@ async function regenerateSingleDay(
         regionalKnowledge.length > 0 ? "regionalKnowledge는 참고 정보일 뿐 필수 반영 조건이 아닙니다." : null,
       ].filter((v): v is string => v !== null),
     }),
-  });
+  }));
 
   if (output.items.length === 0) {
     throw new Error("AI returned an empty day plan");

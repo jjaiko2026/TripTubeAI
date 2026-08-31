@@ -235,12 +235,25 @@ export function genericDestination(name: string): DestinationProfile {
     emoji: "🧳",
     avgCostPerPersonPerNight: 160000,
     popularity: 40,
+    // PHASE — AI 생성이 실패해 결정론적 폴백으로 떨어졌을 때 쓰이는 카탈로그. 예전엔 5개뿐이라
+    // 3일 이상 일정에서 매일 같은 목록이 반복됐다. 소지역(area)을 나눠 15개로 늘려, 폴백이라도
+    // 3~4일치는 겹치지 않게 채운다(그 이상은 generateItineraryFallback이 날짜를 짧게 둔다).
     activities: [
-      { time: "", title: `${name} 대표 명소 탐방`, description: `${name}에서 가장 사랑받는 랜드마크를 둘러보는 코스`, tags: ["culture"], area: "시내" },
-      { time: "", title: `${name} 로컬 맛집 탐방`, description: `현지인들이 즐겨 찾는 ${name}의 맛집 골목`, tags: ["food"], area: "시내" },
-      { time: "", title: `${name} 전통시장 & 쇼핑거리`, description: `기념품과 특산품을 구경하는 쇼핑 코스`, tags: ["shopping"], area: "시내" },
-      { time: "", title: `${name} 자연 산책 코스`, description: `여유롭게 걸으며 힐링할 수 있는 산책로`, tags: ["healing"], area: "근교" },
-      { time: "", title: `${name} 액티비티 체험`, description: `${name}에서만 즐길 수 있는 특별한 체험 프로그램`, tags: ["activity"], area: "근교" },
+      { time: "", title: `${name} 대표 명소`, description: `${name}에서 가장 사랑받는 랜드마크를 둘러보는 코스`, tags: ["attraction"], area: "시내" },
+      { time: "", title: `${name} 역사 유적지`, description: `${name}의 역사와 이야기가 담긴 문화유산 탐방`, tags: ["culture"], area: "시내" },
+      { time: "", title: `${name} 시립·근대 박물관`, description: `${name}의 지역사와 생활상을 정리해 보여주는 전시 관람`, tags: ["culture"], area: "시내" },
+      { time: "", title: `${name} 로컬 맛집 골목`, description: `현지인들이 즐겨 찾는 ${name}의 대표 식당가에서 식사`, tags: ["food"], area: "구도심" },
+      { time: "", title: `${name} 전통시장`, description: `제철 먹거리와 특산품이 모이는 재래시장 구경`, tags: ["food", "shopping"], area: "구도심" },
+      { time: "", title: `${name} 원도심 골목 산책`, description: `오래된 거리와 벽화, 소품숍이 이어지는 도보 코스`, tags: ["culture", "cafe"], area: "구도심" },
+      { time: "", title: `${name} 감성 카페거리`, description: `느긋하게 머무르기 좋은 ${name}의 카페 밀집 거리`, tags: ["cafe", "healing"], area: "구도심" },
+      { time: "", title: `${name} 근교 자연 산책로`, description: `숲·둘레길을 따라 걷는 여유로운 힐링 코스`, tags: ["nature", "healing"], area: "근교" },
+      { time: "", title: `${name} 전망대`, description: `${name} 시가지와 주변 풍경을 한눈에 담는 조망 포인트`, tags: ["nature", "attraction"], area: "근교" },
+      { time: "", title: `${name} 근교 체험 프로그램`, description: `${name} 지역 특색을 살린 공방·농장 등 체험 활동`, tags: ["activity"], area: "근교" },
+      { time: "", title: `${name} 해안·강변 산책`, description: `물가를 따라 걷는 탁 트인 산책 코스`, tags: ["nature", "healing"], area: "물가" },
+      { time: "", title: `${name} 물가 뷰 맛집`, description: `바다·강 전망을 곁들여 식사하기 좋은 자리`, tags: ["food", "healing"], area: "물가" },
+      { time: "", title: `${name} 수상·해양 액티비티`, description: `계절에 맞는 물놀이·보트 등 액티비티(운영 여부는 현지 확인)`, tags: ["activity"], area: "물가" },
+      { time: "", title: `${name} 야시장·먹자골목`, description: `해가 진 뒤 활기를 띠는 ${name}의 저녁 먹거리 거리`, tags: ["food", "nightlife"], area: "야간" },
+      { time: "", title: `${name} 야경 명소`, description: `${name}의 밤 풍경이 예쁜 포인트에서 마무리 산책`, tags: ["nightlife", "healing"], area: "야간" },
     ],
   };
 }

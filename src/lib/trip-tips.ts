@@ -2,11 +2,12 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { Region, TripTips } from "@/lib/types";
 import { getCachedTripTips, saveCachedTripTips, tripTipsCacheKey } from "@/db/trip-tips-cache";
-import { fastModel } from "@/lib/ai/model";
+import { fastModels } from "@/lib/ai/model";
+import { generateTextWithFallback } from "@/lib/ai/generate";
 
-// 창작이 아니라 일반 지식 요약이라 저렴하고 빠른 모델로 충분합니다 (일정 생성용 AI_MODEL과는 별개).
-// PRD v3.0 §20 — provider 직결(§lib/ai/model.ts).
-const TRIP_TIPS_MODEL = fastModel;
+// 창작이 아니라 일반 지식 요약이라 저렴하고 빠른 모델로 충분합니다 (일정 생성용 AI_MODELS와는 별개).
+// PRD v3.0 §20 — provider 직결(§lib/ai/model.ts). 앞에서부터 순서대로 시도.
+const TRIP_TIPS_MODELS = fastModels;
 
 /**
  * PHASE 7 — AI 호출이 실패했을 때 완전히 빈 값(과거 EMPTY_TIPS) 대신 쓰는 결정론적 대체 정보.
@@ -81,15 +82,15 @@ export async function generateTripTips(destinationName: string, region: Region, 
   if (cached) return cached;
 
   try {
-    const { output } = await generateText({
-      model: TRIP_TIPS_MODEL,
+    const { output } = await generateTextWithFallback(TRIP_TIPS_MODELS, (model) => generateText({
+      model,
       output: Output.object({ schema: tripTipsSchema }),
       system:
         "당신은 TripTube AI의 여행 정보 도우미입니다. 알고 있는 일반 지식을 바탕으로 여행지의 그 시기 " +
         "기후와 준비물, (해외 여행지라면) 최근 주요 이슈를 간결하고 실용적으로 한국어로 안내합니다. " +
         "확실하지 않은 수치는 대략적인 범위로 표현하세요.",
       prompt: JSON.stringify({ destination: destinationName, region, month }),
-    });
+    }));
 
     await saveCachedTripTips(key, output).catch((error) => console.error("trip tips cache write failed:", error));
     return output;
