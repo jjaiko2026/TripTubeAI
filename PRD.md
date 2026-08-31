@@ -480,6 +480,28 @@ v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항
 - 서비스 계정 방식은 토큰 만료·동의 화면·앱 게시가 전부 불필요. 스프레드시트를 서비스 계정 이메일에 "편집자"로 공유하면 끝. (조직 정책 `iam.disableServiceAccountKeyCreation`은 프로젝트 레벨 재정의로 해제)
 - §9.2의 KNOWLEDGE_REVIEW / CONTENT_MASTER 내보내기·가져오기 로직 자체는 무변경 — 토큰 획득 계층만 교체.
 
+### 27.6 후기 편집·로그인 게이트 / AI 장애 하드닝 / 챗봇 지연 (2026-08-31, PR #56~#59)
+
+**후기 (PR #56)**
+- 본인이 쓴 후기 **수정** 추가: `WriteReviewDialog`에 `editReview` 모드, `updateReview`/`updateReviewAction`가 `(id, userId)` 소유권 검증(`updateItinerary`와 동일 패턴). `Review.userId` 추가, `getReviews(currentUserId?)`는 조회자 본인 행에만 `userId`를 실어 보낸다(다른 작성자 Clerk id 비노출).
+- **후기 작성은 로그인 필수로 전환** — `createReviewAction`에 `if (!userId) return`, 로그아웃 시 `/reviews`·결과 페이지 CTA는 `<SignInButton>`. 기존 익명 후기(`user_id = null`)는 읽기 전용. §18의 "익명 작성" 서술은 이 절로 대체.
+- 후기 본문 **1000자 제한**(`<Textarea maxLength>` + 서버 `.slice(0, 1000)`). 스키마 변경 없음(`reviews.user_id`는 기존 컬럼).
+
+**AI 장애 하드닝 — 일정 생성 (PR #57)**
+- `genericDestination` 활동 5 → 15개, 소지역 5개로 분산. `generateItineraryFallback`의 재사용 블록은 목적 필터로 좁힌 pool이 아니라 **목적지 전체 카탈로그**를 훑어(1차 미사용 우선 → 2차 회전 재사용) 같은 장소가 여러 날 반복되거나 특정 area가 통째로 누락되던 문제를 해소.
+- **모델 폴백 체인** — `src/lib/ai/model.ts`에 `smartModels`/`fastModels` 배열, `src/lib/ai/generate.ts` `generateTextWithFallback(models, call)`가 앞에서부터 시도(어떤 오류든 다음 모델). 전부 실패 시 결정론적 fallback. 폴백 모델명은 PR #59에서 정정(아래).
+- **성공 일정 캐시** — 신규 테이블 `itinerary_plan_cache(key, plan jsonb, fetched_at)`. `key = requestSeedKey + "::must=" + sorted(mustIncludePlaceIds)`. AI 성공 시 항상 저장, **읽기는 2회 실패 분기에서만**(정상 경로 무변경). 캐시 히트 시 실제 일정 반환(`usedFallback=false`). 30일 TTL. `db:push` 적용 완료.
+- **폴백 여부 영속화** — 신규 컬럼 `itineraries.used_fallback boolean`(nullable, null→false). `saveItinerary`/`updateItinerary`가 기록, `getItinerary`가 반환. 휘발성 `?fallback=1` 쿼리를 대체. `db:push` 적용 완료.
+- **재생성** — `regenerateItineraryAction`(소유자 한정, `(id,userId)` 이중 검증)이 저장된 `request`로 재생성해 제자리 교체. 결과 페이지는 `used_fallback`이고 소유자면 "지금 다시 생성" CTA 노출, 결과는 `?regen=done|stillbusy|failed`(1회성).
+
+**챗봇 지연 (PR #58)**
+- 조건이 바뀌는 턴마다 모델을 2회 연속 호출(도구 호출 → 결과 재전송 → 답변)하던 것을, `sendAutomaticallyWhen`을 커스텀화해 **같은 턴에 답변 텍스트가 있으면 2번째 호출 생략**(도구만 있고 텍스트 없을 때만 재호출). 프롬프트에 "답변 먼저, 같은 턴에 `updateTripDraft`" 지시 추가. `streamText`에 `maxOutputTokens: 512`.
+
+**모델 폴백 체인 정정 (PR #59)**
+- PR #57이 폴백으로 넣은 `gemini-3.6-flash-lite`는 이 API 키에서 **404(존재하지 않는 모델)**라 체인이 무력했다. 프로덕션 키 직접 확인(2026-08-31): `gemini-3.6-flash`는 큰 구조화 출력 호출에서 **429 쿼터 초과**, `gemini-3.5-flash`/`gemini-3.5-flash-lite`는 정상.
+- `smartModels` 폴백 → `gemini-3.5-flash`, `fastModels` 폴백 → `gemini-3.5-flash-lite`. primary는 여전히 `gemini-3.6-flash`(쿼터 풀리면 자동 복귀).
+- **근본 병목은 무료 티어 일일 쿼터** — 체인·캐시는 완충일 뿐, 유료 키가 실제 해결책(미결). §20/§27.2의 "두 티어 모두 gemini-3.6-flash"는 여전히 primary 기준으로 유효.
+
 ---
 
 ## 부록 A — v2.5 → v3.0 핵심 차이
