@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from "ai";
+import { DefaultChatTransport } from "ai";
 import { Bot, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,20 @@ export function TripChat({
 
   const { messages, sendMessage, status, error, regenerate, addToolOutput } = useChat<TripChatUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/trip-chat" }),
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    // 기본 helper(lastAssistantMessageIsCompleteWithToolCalls)는 도구 호출이 있는 턴마다
+    // 무조건 한 번 더 모델을 호출한다. updateTripDraft의 결과는 "ok" 뿐이라 모델이 볼 필요가
+    // 없으므로, 모델이 같은 턴에 답변 텍스트를 이미 냈으면 재호출을 생략한다(왕복 2→1회).
+    // 도구만 호출하고 말이 없을 때만(엣지) 재호출해 답변을 받는다.
+    sendAutomaticallyWhen: ({ messages: msgs }) => {
+      const last = msgs[msgs.length - 1];
+      if (!last || last.role !== "assistant") return false;
+      const parts = last.parts ?? [];
+      const toolResolved = parts.some(
+        (p) => p.type === "tool-updateTripDraft" && p.state === "output-available"
+      );
+      const hasText = parts.some((p) => p.type === "text" && p.text.trim().length > 0);
+      return toolResolved && !hasText;
+    },
     async onToolCall({ toolCall }) {
       if (toolCall.dynamic) return;
       if (toolCall.toolName === "updateTripDraft") {

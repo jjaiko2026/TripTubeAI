@@ -17,6 +17,8 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: fastModel,
+    // 챗봇 답변은 짧게 유지하는 게 규칙이라 상한을 둔다 — 긴 생성으로 응답이 늘어지는 걸 막는다.
+    maxOutputTokens: 512,
     system: buildTripChatSystemPrompt(currentDraft ?? defaultTripRequest()),
     messages: await convertToModelMessages(messages),
     tools: {
