@@ -111,6 +111,8 @@ export interface Itinerary {
 
 export interface Review {
   id: string;
+  /** 작성자 Clerk user id. 로그인 상태로 쓴 후기에만 있고, 본인 여부(수정 권한) 판단에만 쓴다. */
+  userId?: string | null;
   author: string;
   destination: string;
   rating: number;

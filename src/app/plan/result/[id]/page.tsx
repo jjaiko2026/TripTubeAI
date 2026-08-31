@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
+import { SignInButton } from "@clerk/nextjs";
 import { ArrowLeft, RefreshCcw, Sparkles, Star, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
@@ -151,14 +152,22 @@ export default async function PlanResultPage({
         <p className="text-sm text-muted-foreground">
           다녀오신 후 다른 여행자들을 위해 후기를 남겨주세요.
         </p>
-        <WriteReviewDialog
-          renderAs={<Button />}
-          defaultDestination={itinerary.destinationName}
-          defaultNights={itinerary.request.nights}
-          itineraryId={id}
-        >
-          <Star className="h-4 w-4" /> 후기 남기기
-        </WriteReviewDialog>
+        {userId ? (
+          <WriteReviewDialog
+            renderAs={<Button />}
+            defaultDestination={itinerary.destinationName}
+            defaultNights={itinerary.request.nights}
+            itineraryId={id}
+          >
+            <Star className="h-4 w-4" /> 후기 남기기
+          </WriteReviewDialog>
+        ) : (
+          <SignInButton mode="redirect" forceRedirectUrl={`/plan/result/${id}`}>
+            <Button>
+              <Star className="h-4 w-4" /> 로그인하고 후기 남기기
+            </Button>
+          </SignInButton>
+        )}
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ import {
   removePlaceFromItinerary,
   saveItinerary,
   updateItinerary,
+  updateReview,
 } from "@/db/queries";
 import type { MemberType, Region, TripPurpose, TripRequest } from "@/lib/types";
 import { normalizeTripPurposes } from "@/lib/purposes";
@@ -138,6 +139,9 @@ export async function removeItineraryItemAction(formData: FormData) {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** 후기 본문 최대 길이. 폼의 maxLength와 짝을 이루는 서버측 하드 상한(조작/붙여넣기 대비). */
+const REVIEW_CONTENT_MAX = 1000;
+
 /**
  * PRD v3.0 §16 — 결과 페이지의 "일정 수정" 폼. 지정한 날짜 하나만 자연어 지시대로 재생성한다.
  * (id, userId) 소유권을 확인하고(getItinerary + updateItinerary 이중), AI가 실패하면 원본을
@@ -171,6 +175,8 @@ export async function reviseItineraryDayAction(formData: FormData) {
 
 export async function createReviewAction(formData: FormData) {
   const { userId } = await auth();
+  // 후기 작성은 로그인 사용자만 — 그래야 이후 본인 수정(updateReviewAction)이 가능하다.
+  if (!userId) return;
 
   // 결과 페이지의 "후기 남기기"에서만 넘어오는 값. 형식이 uuid가 아니면(직접 작성/조작) 무시한다.
   // FK를 걸지 않으므로 여기서 형식만 검증하고, 존재하지 않는 일정 id여도 후기 저장 자체는 막지 않는다.
@@ -182,16 +188,39 @@ export async function createReviewAction(formData: FormData) {
   const totalCost = Number.isFinite(rawCost) && rawCost > 0 ? Math.round(rawCost) : null;
 
   await createReview({
-    userId: userId ?? null,
+    userId,
     author: String(formData.get("author") || "익명 여행자"),
     destination: String(formData.get("destination") || "미정"),
     rating: Math.min(5, Math.max(1, Number(formData.get("rating") || 5))),
     title: String(formData.get("title") || "여행 후기"),
-    content: String(formData.get("content") || ""),
+    content: String(formData.get("content") || "").slice(0, REVIEW_CONTENT_MAX),
     tripMonth: new Date().getMonth() + 1,
     nights: Math.max(0, Number(formData.get("nights") || 1)),
     totalCost,
     itineraryId,
+  });
+
+  revalidatePath("/reviews");
+}
+
+/**
+ * 본인이 쓴 후기 수정. 로그인 상태이고 (id, userId) 소유권이 맞을 때만 반영된다
+ * (updateReview의 소유자 검사와 이중 보호). 조작된 id·남의 후기는 조용히 무시한다.
+ */
+export async function updateReviewAction(formData: FormData) {
+  const { userId } = await auth();
+  if (!userId) return;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!UUID_RE.test(id)) return;
+
+  await updateReview(id, userId, {
+    author: String(formData.get("author") || "익명 여행자"),
+    destination: String(formData.get("destination") || "미정"),
+    rating: Math.min(5, Math.max(1, Number(formData.get("rating") || 5))),
+    title: String(formData.get("title") || "여행 후기"),
+    content: String(formData.get("content") || "").slice(0, REVIEW_CONTENT_MAX),
+    nights: Math.max(0, Number(formData.get("nights") || 1)),
   });
 
   revalidatePath("/reviews");
