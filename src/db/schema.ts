@@ -1,4 +1,4 @@
-import { check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { NearbyPlacesResult, Source, TripTips } from "@/lib/types";
@@ -28,6 +28,10 @@ export const itineraries = pgTable("itineraries", {
   // 기후/준비물/최근 이슈 정보(로딩 중 Tip으로도 노출). 이 컬럼이 생기기 전에 저장된
   // 기존 일정은 null이라, 조회 시 빈 값으로 대체합니다 (src/db/queries.ts).
   tripTips: jsonb("trip_tips").$type<TripTips>(),
+  // AI 생성이 2회 다 실패해 결정론적 폴백 뼈대로 만들어진 일정이면 true. 결과 페이지가
+  // "지금 다시 생성" CTA를 계속 띄우는 신호입니다 (src/app/plan/result/[id]/page.tsx).
+  // 이 컬럼 이전에 저장된 일정은 null → 조회 시 false로 취급합니다.
+  usedFallback: boolean("used_fallback"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -47,6 +51,17 @@ export const sourceCache = pgTable("source_cache", {
 export const tripTipsCache = pgTable("trip_tips_cache", {
   key: text("key").primaryKey(),
   tips: jsonb("tips").$type<TripTips>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// 여행 조건(requestSeedKey + mustIncludePlaceIds) 단위로 "AI가 만든 일정 뼈대(PlanDay[])"를
+// 캐싱합니다. AI 호출이 성공하면 저장하고, 이후 같은 조건 요청에서 AI가 2회 다 실패하면
+// (쿼터 초과/장애) 이 캐시를 결정론적 폴백보다 먼저 씁니다. 정상 경로는 항상 새로 생성하며,
+// 읽기는 오직 실패 분기에서만 일어납니다 (src/lib/itinerary.ts). 소스(영상/블로그)는 여기
+// 저장하지 않습니다 — 이용약관상 갱신 주기가 짧아 별도 source_cache에서 따로 관리합니다.
+export const itineraryPlanCache = pgTable("itinerary_plan_cache", {
+  key: text("key").primaryKey(),
+  plan: jsonb("plan").notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

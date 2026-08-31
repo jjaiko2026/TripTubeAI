@@ -15,6 +15,7 @@ import { fetchNaverBlogs } from "@/lib/real/naver-blog";
 import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
 import { getCachedSources, saveCachedSources } from "@/db/source-cache";
+import { getCachedPlan, saveCachedPlan } from "@/db/itinerary-plan-cache";
 import { getRejectedSourceIds } from "@/db/content-moderation";
 import { tryAcquireSearchLock, releaseSearchLock } from "@/db/search-lock";
 import { consumeYoutubeQuota } from "@/db/rate-limit";
@@ -27,10 +28,11 @@ import {
   type RegionalKnowledgeItem,
 } from "@/db/knowledge-queries";
 import { getDetailFields } from "@/lib/detail-field-labels";
-import { smartModel } from "@/lib/ai/model";
+import { smartModels } from "@/lib/ai/model";
+import { generateTextWithFallback } from "@/lib/ai/generate";
 
-// PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts).
-const AI_MODEL = smartModel;
+// PRD v3.0 §20 — provider 직결 모델 인스턴스(§lib/ai/model.ts). 앞에서부터 순서대로 시도한다.
+const AI_MODELS = smartModels;
 const DAY_TIME_SLOTS = ["09:30", "12:00", "14:30", "17:00", "19:00"];
 
 /**
@@ -245,8 +247,8 @@ async function generateItineraryWithAI(
   }));
   const mode = arrivalMode(request, destination);
 
-  const { output } = await generateText({
-    model: AI_MODEL,
+  const { output } = await generateTextWithFallback(AI_MODELS, (model) => generateText({
+    model,
     output: Output.object({ schema: planSchema }),
     system:
       "당신은 TripTube AI의 여행 일정 플래너입니다. 사용자의 여행 조건과 목적지 대표 활동 목록을 참고해 " +
@@ -384,7 +386,7 @@ async function generateItineraryWithAI(
       ].filter((v): v is string => v !== null),
       activityCatalog,
     }),
-  });
+  }));
 
   if (output.days.length === 0 || output.days.every((d) => d.items.length === 0)) {
     throw new Error("AI returned an empty itinerary plan");
@@ -484,38 +486,38 @@ function generateItineraryFallback(request: TripRequest, destination: Destinatio
     for (let offset = 1; picked.length < slotsForDay.length && offset < areaGroups.length; offset++) {
       picked = [...picked, ...takeFromArea(areaIndex + offset, slotsForDay.length - picked.length)];
     }
-    // 그래도 부족하면(활동 카탈로그 자체가 여행 일수보다 작은 극단적인 경우) 이미 쓴 활동을
-    // 재사용합니다. PHASE 5 — 예전엔 이 재사용이 항상 pool[0]부터 시작해, 카탈로그가 소진된
-    // 이후의 모든 날짜가 시간·순서까지 완전히 똑같아지는 문제가 실제 데이터에서 확인됐다
-    // (예: genericDestination()은 활동이 정확히 5개뿐이라 2일차부터 매일 동일했음). day를
-    // 시드로 회전 시작점을 옮겨 매 실행이 아니라 날짜별로 결정론적으로 다른 지점부터
-    // 순환하게 하고, 이 날짜에서 이미 고른 활동과는 먼저 안 겹치게 채운다. 그래도 슬롯이
-    // 남으면(활동 수 자체가 하루 슬롯 수보다 적은 극단적인 경우) 그때만 중복을 허용해
-    // 일정이 비지 않도록 보장한다.
+    // 서로 다른 area가 다 소진되면(활동 카탈로그가 여행 일수보다 짧은 경우) 목적지 "전체"
+    // 카탈로그에서 채운다. PHASE 5 — 예전엔 매 날짜가 pool을 순서만 바꿔 담아 "매일 같은 목록"이
+    // 됐고, 목적 필터로 좁혀진 pool만 재활용하다 보니 목적에 안 맞는 area(예: 강릉 북부 주문진)는
+    // 폴백에서 아예 안 나왔다. 1차로 이번 여행에서 아직 안 쓴 활동을 날짜별 회전 시작점부터
+    // 채우고, 그래도 모자라면 2차로 이미 쓴 활동을 재사용하되 같은 날 중복은 계속 금지하고
+    // 날짜마다 회전 시작점을 옮겨 서로 다른 구간이 나오게 한다.
     if (picked.length < slotsForDay.length) {
+      const all = destination.activities;
       const pickedTitles = new Set(picked.map((a) => a.title));
-      const rotationStart = (day - 1) % pool.length;
-      for (let step = 0; picked.length < slotsForDay.length && step < pool.length; step++) {
-        const candidate = pool[(rotationStart + step) % pool.length];
-        if (pickedTitles.has(candidate.title)) continue;
-        picked.push(candidate);
-        pickedTitles.add(candidate.title);
+      const start = ((day - 1) * slotsForDay.length) % all.length;
+      for (let step = 0; picked.length < slotsForDay.length && step < all.length; step++) {
+        const c = all[(start + step) % all.length];
+        if (pickedTitles.has(c.title) || usedTitles.has(c.title)) continue;
+        picked.push(c);
+        pickedTitles.add(c.title);
+        usedTitles.add(c.title);
       }
-      for (let i = 0; picked.length < slotsForDay.length; i++) {
-        picked.push(pool[(rotationStart + i) % pool.length]);
+      for (let step = 0; picked.length < slotsForDay.length && step < all.length; step++) {
+        const c = all[(start + step) % all.length];
+        if (pickedTitles.has(c.title)) continue;
+        picked.push(c);
+        pickedTitles.add(c.title);
       }
     }
 
-    const items: PlanItem[] = slotsForDay.map((time, i) => {
-      const activity = picked[i];
-      return {
-        time,
-        title: activity.title,
-        description: activity.description,
-        tags: activity.tags,
-        geocodeQuery: activity.title,
-      };
-    });
+    const items: PlanItem[] = picked.slice(0, slotsForDay.length).map((activity, i) => ({
+      time: DAY_TIME_SLOTS[i],
+      title: activity.title,
+      description: activity.description,
+      tags: activity.tags,
+      geocodeQuery: activity.title,
+    }));
 
     // 그 날 실제로 활동을 뽑아온 area 이름을 그대로 짧은 키워드로 씁니다(순서도 박스용).
     const areaName =
@@ -1344,12 +1346,9 @@ export async function generateItinerary(
   // 일정 하나가 통째로 fallback으로 떨어지면(특히 캐시되는 공개 예시 페이지에서) 지리적으로
   // 뒤죽박죽인 동선이 방문자에게 그대로 노출되므로, 일시적 오류(네트워크/쿼터 스파이크)에
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
-  let plan: PlanDay[];
-  // PHASE 3 — 2회 재시도 다 실패해 결정론적 fallback으로 넘어간 경우에만 true. 정상 경로는
-  // 절대 건드리지 않는다(선언만 하고 fallback 분기 안에서만 대입).
-  let usedFallback = false;
-  try {
-    plan = await generateItineraryWithAI(
+  const planCacheKey = `${requestSeedKey(request)}::must=${[...mustIncludePlaceIds].sort().join(",")}`;
+  const runAi = () =>
+    generateItineraryWithAI(
       request,
       destination,
       days,
@@ -1358,22 +1357,34 @@ export async function generateItinerary(
       regionalKnowledge,
       mustIncludePlaceIds
     );
+
+  let plan: PlanDay[];
+  // 2회 재시도가 다 실패하고, 같은 조건으로 전에 성공한 캐시(itinerary_plan_cache)도 없을 때만
+  // true. 정상 경로/캐시 재사용 경로는 절대 건드리지 않는다.
+  let usedFallback = false;
+  try {
+    plan = await runAi();
+    await saveCachedPlan(planCacheKey, plan).catch((e) => console.error("plan cache write failed:", e));
   } catch (firstError) {
     console.error("AI itinerary generation failed, retrying once:", firstError);
     try {
-      plan = await generateItineraryWithAI(
-        request,
-        destination,
-        days,
-        verifiedPlaces,
-        placeRegionLabelById,
-        regionalKnowledge,
-        mustIncludePlaceIds
-      );
+      plan = await runAi();
+      await saveCachedPlan(planCacheKey, plan).catch((e) => console.error("plan cache write failed:", e));
     } catch (secondError) {
-      console.error("AI itinerary generation failed again, using fallback plan:", secondError);
-      plan = generateItineraryFallback(request, destination, days);
-      usedFallback = true;
+      console.error("AI itinerary generation failed again:", secondError);
+      // #4 — 같은 조건으로 전에 성공한 일정 뼈대가 있으면 결정론적 fallback보다 먼저 쓴다
+      // (AI 장애 중 같은 요청을 다시 넣어도 "매번 똑같은 폴백"이 아니라 실제 일정을 돌려주기 위함).
+      const cachedPlan = await getCachedPlan<PlanDay[]>(planCacheKey).catch((e) => {
+        console.error("plan cache read failed:", e);
+        return null;
+      });
+      if (cachedPlan && cachedPlan.length > 0) {
+        console.error("AI unavailable — serving a cached plan from a previous successful generation");
+        plan = cachedPlan;
+      } else {
+        plan = generateItineraryFallback(request, destination, days);
+        usedFallback = true;
+      }
     }
   }
 
@@ -1436,8 +1447,8 @@ async function regenerateSingleDay(
   const arrivalWord = mode === "ferry" ? "항구/여객터미널 도착" : mode === "airport" ? "공항 도착" : "도착";
   const departureWord = mode === "ferry" ? "항구/여객터미널로 출발" : mode === "airport" ? "공항으로 출발" : "출발(귀가 이동)";
 
-  const { output } = await generateText({
-    model: AI_MODEL,
+  const { output } = await generateTextWithFallback(AI_MODELS, (model) => generateText({
+    model,
     output: Output.object({ schema: singleDaySchema }),
     system:
       "당신은 TripTube AI의 여행 일정 플래너입니다. 이미 완성된 여행 일정 중 사용자가 지정한 하루치만, " +
@@ -1509,7 +1520,7 @@ async function regenerateSingleDay(
         regionalKnowledge.length > 0 ? "regionalKnowledge는 참고 정보일 뿐 필수 반영 조건이 아닙니다." : null,
       ].filter((v): v is string => v !== null),
     }),
-  });
+  }));
 
   if (output.items.length === 0) {
     throw new Error("AI returned an empty day plan");
