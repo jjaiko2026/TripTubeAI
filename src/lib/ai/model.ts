@@ -25,9 +25,10 @@ export const fastModel = google("gemini-3.6-flash");
 /**
  * 폴백 체인 — generateTextWithFallback(§lib/ai/generate.ts)이 앞에서부터 순서대로 시도하고,
  * 한 모델이 실패하면(429 쿼터 초과, 503 과부하, 잘못된 모델명 등 구분 없이) 다음 모델로 넘어간다.
- * 두 번째 항목은 같은 키의 별도 모델이라 per-model RPM 한도가 따로 잡혀 스파이크에는 도움이 되지만,
- * 프로젝트 전체 일일 쿼터가 바닥나면 둘 다 실패해 각 호출부의 결정론적 폴백으로 떨어진다.
- * 모델명 유효성은 배포 시점 공식 문서로 확인할 것(구식이어도 체인이 다음으로 넘어가 회귀는 없음).
+ * 두 번째 항목은 이전 세대의 별도 모델이라 쿼터/RPM 한도가 따로 잡힌다 — gemini-3.6-flash가
+ * 실제 워크로드(큰 구조화 출력)에서 429가 나도 3.5 계열은 통과하는 걸 확인했다(2026-08-31 프로덕션 키).
+ * 두 모델 다 실패하면 각 호출부의 결정론적 폴백으로 떨어진다.
+ * ※ gemini-3.6-flash-lite는 이 키에서 404(존재하지 않음)라 폴백으로 쓰면 안 된다.
  */
-export const smartModels = [smartModel, google("gemini-3.6-flash-lite")];
-export const fastModels = [fastModel, google("gemini-3.6-flash-lite")];
+export const smartModels = [smartModel, google("gemini-3.5-flash")];
+export const fastModels = [fastModel, google("gemini-3.5-flash-lite")];
