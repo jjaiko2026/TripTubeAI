@@ -14,7 +14,7 @@ import { fetchYoutubeVideos } from "@/lib/real/youtube";
 import { fetchNaverBlogs } from "@/lib/real/naver-blog";
 import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
-import { getCachedSources, saveCachedSources } from "@/db/source-cache";
+import { getCachedSources, saveCachedSources, normalizeQuery } from "@/db/source-cache";
 import { getCachedPlan, saveCachedPlan } from "@/db/itinerary-plan-cache";
 import { getRejectedSourceIds } from "@/db/content-moderation";
 import { tryAcquireSearchLock, releaseSearchLock } from "@/db/search-lock";
@@ -689,7 +689,10 @@ async function searchAndCache(query: string): Promise<Source[]> {
 
 /** Pre-fetch 크론(src/app/api/cron/prefetch/route.ts)도 이 함수를 그대로 재사용해, 실제 사용자
  * 요청과 똑같이 캐시 우선 조회 → 락 → Rate Limiter를 거칩니다. */
-export async function fetchQueryCandidates(query: string): Promise<Source[]> {
+export async function fetchQueryCandidates(rawQuery: string): Promise<Source[]> {
+  // 캐시 키뿐 아니라 락 키·대기 키·실제 API 검색어까지 같은 표준형을 쓰도록 입구에서 한 번
+  // 정규화한다 — 표기만 다른 동시 요청이 락을 따로 잡아 API를 중복 호출하는 걸 막는다.
+  const query = normalizeQuery(rawQuery);
   const cached = await getCachedSources(query).catch((error) => {
     console.error("source cache read failed:", error);
     return null;
@@ -722,7 +725,8 @@ export async function fetchQueryCandidates(query: string): Promise<Source[]> {
  * 그 장소 이름으로 네이버 블로그만 검색해 캐시한다("블로그 1개라도 붙인다"). combined 캐시와
  * 겹치지 않게 키에 "blog::" 접두사를 쓴다. 블로그가 아예 없으면 빈 배열(항목은 장소 정보만).
  */
-async function fetchQueryBlogs(query: string): Promise<Source[]> {
+async function fetchQueryBlogs(rawQuery: string): Promise<Source[]> {
+  const query = normalizeQuery(rawQuery);
   const cacheKey = `blog::${query}`;
   const cached = await getCachedSources(cacheKey).catch(() => null);
   if (cached && cached.length > 0) return cached;
