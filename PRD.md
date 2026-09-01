@@ -98,9 +98,9 @@ TripTube AI는 매 요청마다 인터넷을 처음부터 검색하는 서비스
 | 장소·지식 확보 | — | 지원 지역이면 TourAPI/Knowledge 조회 → AI 프롬프트 참고자료로 공급, 부족분은 장소 단위 외부 검색 | ✅ (§9, §11) |
 | 일정 생성 | "AI 일정 만들기" | `generateItinerary()` — AI가 `dayRegions` + 날짜별 항목 생성 → 항목별 소스 매칭 → 지오코딩 → 동선 정렬 | ✅ `src/lib/itinerary.ts` |
 | 결과 확인 | `/plan/result/[id]` | 요약 · 타임라인 · 지도 동선 · 항목별 참고자료 · 여행 팁 | ✅ |
-| 수정 | 항목 삭제 / 장소 추가 / 조건 다시 입력 | 항목 제거, `/places`에서 장소 추가, 재생성(교체 저장) | 🟡 부분 구현 (§16) |
+| 수정 | 항목 삭제 / 장소 추가 / 조건 다시 입력 / 자연어 재요청 | 항목 제거, 장소 추가(날짜 지정), 재생성(교체 저장), 해당 날짜 자연어 재생성 | ✅ (드래그 재정렬만 Post-MVP, §16) |
 | 확정 | (저장은 생성 시 자동) | `itineraries`에 저장, 공유 링크 | 🟡 명시적 "확정" 상태 없음 (§17) |
-| 후기 | `/reviews`에서 후기 작성 | `reviews` 테이블 저장 | 🟡 일정과 미연결 (§18) |
+| 후기 | `/reviews`에서 후기 작성 | `reviews` 테이블 저장, `itineraryId`로 일정 연결 | ✅ (랭킹 신호 반영은 Post-MVP, §18) |
 | 재사용 | 다음 요청 | 확정 Knowledge가 프롬프트로 재유입 | 🟡 후기 재사용 경로 없음 (§19) |
 
 ## 7. Travel Request Interpretation
@@ -167,9 +167,9 @@ AI 일정 생성
 - 외부 호출은 항상 공용 캐시(`source_cache`, YouTube 30일 TTL) · 락(`search_locks`) · Rate Limiter(`api_rate_limits`)를 통과한 뒤에만 실제 API를 친다.
 - API 실패·쿼터 초과가 일정 생성 전체 실패로 이어지지 않는다 → 결정론적 fallback 일정으로 대체(`generateItineraryFallback`).
 
-### 8.5 현재 구현과의 차이 (실행 과제)
+### 8.5 검색 우선순위 사다리 (구현됨)
 
-현재 `src/lib/itinerary.ts`는 확정된 일정 항목마다 `{목적지} {장소명}` 쿼리로 **YouTube + 네이버를 병렬 검색**한다(여행 1건당 최대 30개 장소). TourAPI/Knowledge는 이미 프롬프트 참고자료로 주입되지만, **"이미 Knowledge/TourAPI가 그 장소를 커버하면 YouTube 호출을 건너뛴다"는 fallback 사다리는 아직 없다.** v3.0은 이 우선순위(§8.2/§8.3)를 실제 호출 순서로 만든다 — §25 참고.
+`src/lib/itinerary.ts` `attachSourcesAndLocations()`는 확정된 일정 항목을 먼저 검증 장소(TourAPI·검수된 Knowledge)와 이름 매칭한다(`matchedPlaceByTitle`). 매칭된 항목은 그 장소 전용 YouTube `search.list` 호출을 **건너뛰고**(공식 관광정보·검수 지식이 영상보다 신뢰할 수 있는 1차 근거), 장소명으로 네이버 블로그만 1건 검색해 붙인다. 매칭되지 않는 항목만 `{목적지} {장소명}` 쿼리로 YouTube+네이버 전용 검색 대상으로 남는다 — 지원 지역 일정일수록 신규 `search.list` 호출이 크게 준다. 외부 호출은 여전히 `source_cache`(정규화된 키, 30일 TTL) · `search_locks` 단일 실행 · `api_rate_limits` 일일 상한을 통과한다.
 
 ## 9. Knowledge / ATKB Role
 
@@ -275,9 +275,7 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 - 자료 유형: 한국관광공사 / 축적된 Knowledge / 네이버 블로그 / YouTube.
 - 추천 이유(description)에는 근거로 삼은 구체적 내용(수치·이용시간·요약)을 실제로 언급한다("좋다"만 쓰지 않는다).
 
-**현재 구현:** `ItineraryItemCard` → `source-card.tsx`, `SOURCES_PER_ITEM = 3`. 표시되는 소스는 **YouTube + 네이버 블로그만**이다. TourAPI/Knowledge는 프롬프트에는 들어가지만 일정지 카드에 "참고자료"로는 아직 노출되지 않는다. 소스가 하나도 없으면 결과 화면이 "AI가 선택한 장소 정보를 바탕으로 구성"이라고 정직하게 표시한다.
-
-**v3.0 실행 과제:** TourAPI 상세/Knowledge summary도 일정지 카드의 참고자료 슬롯에 포함해, 4개 유형에서 품질순 1~3개를 채운다.
+**현재 구현:** `ItineraryItemCard`, `MAX_REFERENCES = 3`. 항목이 검증 장소(TourAPI·검수 Knowledge)에 매칭되면 그 상세(주소·개요·근거·공식 홈페이지)를 참고자료 블록 맨 앞에 고정하고("한국관광공사"/"여행 지식" 배지), 남은 슬롯을 `scoreSourceForItem` 순으로 정렬된 블로그·영상으로 채운다(합계 최대 3, `source-card.tsx`). 4개 유형(한국관광공사 / 여행 지식 / 네이버 블로그 / YouTube)이 모두 카드에 노출된다. 자료가 하나도 없으면 결과 화면이 "AI가 선택한 장소 정보를 바탕으로 구성"이라고 정직하게 표시한다.
 
 ## 14. Itinerary UI
 
@@ -306,9 +304,10 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 |---|---|---|
 | 항목 삭제(AI 생성 항목) | ✅ `removeItineraryItemAction` | 유지 |
 | 장소 항목 삭제(placeId 항목) | ✅ `removePlaceFromItineraryAction` | 유지 |
-| 장소 추가 | ✅ `/places` → `addPlaceToItineraryAction`(날짜 지정) | 유지 |
+| 장소 추가 | ✅ `addPlaceToItineraryAction`(날짜 지정) | 유지 |
 | 조건 다시 입력 → 재생성 | ✅ `/plan/new?editFrom=` → 교체 저장(`updateItinerary`) | 유지 |
-| 장소 교체 / 순서 변경 / 휴식·맛집·관광 비중 변경 | ❌ | **자연어 재요청 1턴**으로 처리(§25 다음 작업 후보). 드래그 재정렬은 Post-MVP. |
+| 장소 교체 / 휴식·맛집·관광 비중 변경 | ✅ **자연어 재요청 1턴** — `reviseItineraryDayAction` → `reviseItineraryDay()`가 지정한 날짜만 재생성하고 그 날짜의 소스·좌표를 다시 붙인다. 소유자 전용 폼(`revise-day-form.tsx`). | 유지 |
+| 드래그 순서 변경 | ❌ Post-MVP | — |
 
 편집의 소유권은 항상 `(itineraryId, userId)` 이중 검증.
 
@@ -320,10 +319,10 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 
 ## 18. Review / Feedback
 
-- `/reviews` — `createReviewAction` → `reviews` 테이블(author · destination · rating · title · content · tripMonth · nights).
-- 결과 페이지에서 "후기 남기기" CTA(`WriteReviewDialog`, 여행지·박수 프리필).
-- 현재 한계: 후기가 특정 `itineraryId`와 연결되지 않고, 일정 품질로 피드백되지 않는다.
-- v3.0 MVP: 후기 작성 흐름 자체는 데모 시나리오(§23)에 포함. 후기↔일정 연결 및 재사용은 §19/Post-MVP.
+- `/reviews` — `createReviewAction` → `reviews` 테이블(author · destination · rating · title · content · tripMonth · nights · `itineraryId`).
+- 결과 페이지에서 "후기 남기기" CTA(`WriteReviewDialog`, 여행지·박수 프리필) — 로그인 필수(§27.6), 작성 시 그 `itineraryId`를 함께 저장.
+- 후기 카드에서 연결된 일정으로 가는 링크("이 후기의 일정 보기 →", `review-card.tsx`). 본인 후기는 수정 가능(§27.6).
+- 아직 없는 것: 후기 평점·본문을 장소/코스 랭킹 신호로 반영하는 경로 — §19/Post-MVP.
 
 ## 19. Data Accumulation / Reuse
 
@@ -357,16 +356,16 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 
 1. 자연어 여행 요청 입력 (폼 + 챗봇) — ✅ 있음
 2. 여행 조건·지역·기간·취향 해석 — ✅ 있음
-3. 지역별 Search Strategy (국내: 관광공사→Knowledge→블로그→YouTube / 해외: Knowledge→블로그→YouTube), 앞 단계 충분 시 뒤 단계 생략 — 🟡 우선순위 사다리 미완 (§8.5, §25)
+3. 지역별 Search Strategy (국내: 관광공사→Knowledge→블로그→YouTube / 해외: Knowledge→블로그→YouTube), 앞 단계 충분 시 뒤 단계 생략 — ✅ 우선순위 사다리 구현 (§8.5)
 4. 기존 Knowledge 우선 활용 — ✅ 프롬프트 주입 경로 있음
 5. 필요한 경우에만 외부 자료 검색 (캐시·락·Rate Limiter) — ✅ 있음
 6. AI 여행 일정 생성 (날짜별 시간·장소·활동·추천 이유·도착/출발 고정·동선 정렬) — ✅ 있음
-7. 일정지별 참고자료 1~3개 (4개 유형에서 품질순) — 🟡 현재 YouTube/블로그만 (§13)
+7. 일정지별 참고자료 1~3개 (4개 유형에서 품질순) — ✅ 관광공사·여행 지식·블로그·영상 모두 카드에 노출 (§13)
 8. 장소 간 이동 동선 — ✅ 있음
 9. 지도 표시 (국내 Naver / 해외 Google, Provider 추상화) — ✅ 있음
-10. 일정 수정 (항목 삭제·장소 추가·조건 재입력, + 자연어 재요청 1턴) — 🟡 자연어 재요청 미구현 (§16)
+10. 일정 수정 (항목 삭제·장소 추가·조건 재입력, + 자연어 재요청 1턴) — ✅ 있음 (`reviseItineraryDayAction`, §16). 드래그 재정렬만 Post-MVP.
 11. 일정 확정/저장 (저장=확정) — ✅ 있음
-12. 후기 작성 기본 흐름 — ✅ 있음(일정 미연결)
+12. 후기 작성 기본 흐름 — ✅ 있음 (`itineraryId`로 일정 연결, §18)
 
 ## 22. Post-MVP Scope
 
@@ -426,12 +425,14 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 
 ## 25. Implementation Priorities
 
-우선순위 순서(제출 데모 가치 기준):
+v3.0 데모 가치 기준 우선순위 4개 — **모두 구현 완료**(`dcbf94e` "realign to PRD v3.0"):
 
-1. **일정지 참고자료를 4개 유형으로 확장** (§13) — TourAPI 상세/Knowledge summary를 일정지 카드 참고자료 슬롯에 포함, 품질순 1~3개. Pipeline A가 이미 이 데이터를 프롬프트로 받고 있으므로 **연결만 하면 되는 작업**에 가깝다.
-2. **Search 우선순위 사다리** (§8.5) — 지원 지역에서 TourAPI/Knowledge가 그 장소를 커버하면 해당 항목의 YouTube `search.list`를 건너뛴다. YouTube 호출량 감소 + 국내 우선순위(관광공사→Knowledge→블로그→YouTube) 실현.
-3. **자연어 일정 수정 1턴** (§16) — 결과 화면에서 "○○ 대신 △△로 바꿔줘", "맛집 비중 늘려줘"를 받아 해당 날짜만 재생성. 챗봇 인프라 재사용.
-4. 후기 ↔ 일정 연결(§18/§19) — `reviews`에 `itineraryId` nullable 추가(additive), 결과 페이지 후기에 연결.
+1. **일정지 참고자료 4개 유형** (§13) — ✅ 검증 장소 상세 + 블로그·영상을 한 카드에, 최대 3개.
+2. **Search 우선순위 사다리** (§8.5) — ✅ 검증 장소 매칭 항목은 YouTube `search.list` 생략.
+3. **자연어 일정 수정 1턴** (§16) — ✅ `reviseItineraryDayAction`로 지정 날짜만 재생성.
+4. **후기 ↔ 일정 연결** (§18) — ✅ `reviews.itineraryId`(additive) + 결과 페이지 후기 CTA + 후기 카드의 일정 링크.
+
+다음 후보(Post-MVP, §22): 후기를 랭킹 신호로 반영, 확정 일정을 참고 코스로 재노출, 드래그 재정렬.
 
 ## 26. Out of Scope
 
@@ -529,17 +530,19 @@ v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항
 - `/plan/result/[id]` 결과 화면 + PDF + 공유 링크
 - 대시보드 실데이터 집계 + `pipeline_b_events`
 
-## 부록 C — 연결만 하면 되는 부분
+## 부록 C — v3.0에서 "연결만 해서" 완료한 부분
 
-- TourAPI/Knowledge → 일정지 **참고자료 카드** (프롬프트 유입은 이미 됨, 화면 노출만 추가)
-- Search 우선순위 사다리 — 항목별 검색 전에 "이미 커버됐는가" 체크 한 단계 추가
-- 후기 → 일정 (`reviews.itineraryId` additive 컬럼 1개)
+`dcbf94e`에서 세 가지 모두 반영됨 (§25):
 
-## 부록 D — MVP를 위해 새로 구현할 최소 기능
+- ✅ TourAPI/Knowledge → 일정지 **참고자료 카드** 노출 (프롬프트 유입 위에 화면 노출 추가)
+- ✅ Search 우선순위 사다리 — 항목별 검색 전 "검증 장소에 매칭됐는가" 체크 한 단계
+- ✅ 후기 → 일정 (`reviews.itineraryId` additive 컬럼)
 
-1. 일정지 참고자료 4-유형 통합 렌더링 (§25-1)
-2. 지원 지역 항목의 조건부 YouTube 호출 스킵 (§25-2)
-3. 결과 화면 자연어 수정 1턴 (§25-3)
+## 부록 D — v3.0 MVP 신규 구현 (완료)
+
+1. ✅ 일정지 참고자료 4-유형 통합 렌더링 (§25-1)
+2. ✅ 지원 지역 항목의 조건부 YouTube 호출 스킵 (§25-2)
+3. ✅ 결과 화면 자연어 수정 1턴 (§25-3)
 
 ## 부록 E — MVP에서 명확히 제외
 
