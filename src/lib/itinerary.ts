@@ -910,8 +910,46 @@ function isPlaceMatch(source: Source, place: string): boolean {
 function isRelevantToPlace(source: Source, place: string): boolean {
   if (source.kind !== "blog") return true;
   const compact = (s: string) => s.replace(/\s+/g, "");
-  const target = compact(place);
-  return sourceText(source).some((t) => t && compact(t).includes(target));
+  // 항목 제목은 "협재해수욕장 산책"처럼 고유명사 뒤에 행동어가 붙는 일이 많아, 전체 문구가 아니라
+  // 첫 토큰(고유명사)만 있어도 그 장소를 다룬 글로 본다. 토큰이 하나뿐이면 전체로 비교한다.
+  const tokens = place.trim().split(/\s+/);
+  const targets = [compact(place), ...(tokens.length > 1 && tokens[0].length >= 2 ? [tokens[0]] : [])];
+  return sourceText(source).some((t) => t && targets.some((target) => compact(t).includes(target)));
+}
+
+/**
+ * 목적지+장소 검색은 유사도 랭킹에서 "제주도" 같은 큰 단어가 장소명을 눌러 장소를 다룬 글이 컷
+ * 아래로 밀리곤 한다. 그래서 1차 풀에 그 장소를 다룬 블로그가 충분하지 않을 때만, 장소명만으로
+ * 다시 검색한다(고유명사가 랭킹을 주도). 장소명만으로는 동명이처(다른 지역의 같은 이름) 글이 섞이므로
+ * 제목/스니펫에 목적지 이름이나 별칭이 있는 글만 남긴다. 결과는 장소 기준으로 캐시한다.
+ */
+async function fetchPlaceOnlyBlogs(destination: DestinationProfile, place: string): Promise<Source[]> {
+  const cacheKey = `blog-place::${destination.id}::${normalizeQuery(place)}`;
+  const cached = await getCachedSources(cacheKey).catch(() => null);
+  if (cached && cached.length > 0) return cached;
+
+  const names = [destination.name, ...destination.aliases].map((n) => n.replace(/\s+/g, "").toLowerCase());
+  const blogs = (await fetchNaverBlogs(place, CANDIDATE_POOL_SIZE)).filter(
+    (s) =>
+      isRelevantToPlace(s, place) &&
+      sourceText(s).some((t) => t && names.some((n) => t.replace(/\s+/g, "").toLowerCase().includes(n)))
+  );
+  if (blogs.length > 0) {
+    await saveCachedSources(cacheKey, blogs).catch((error) => console.error("place blog cache write failed:", error));
+  }
+  return blogs;
+}
+
+/** 1차 풀에 그 장소를 다룬 블로그가 BLOGS_PER_ITEM개 미만이면 장소명 단독 검색 결과를 합친다. */
+async function supplementBlogsForPlace(
+  destination: DestinationProfile,
+  place: string,
+  pool: Source[]
+): Promise<Source[]> {
+  const relevant = pool.filter((s) => s.kind === "blog" && isRelevantToPlace(s, place)).length;
+  if (relevant >= BLOGS_PER_ITEM) return pool;
+  const extra = await fetchPlaceOnlyBlogs(destination, place).catch(() => []);
+  return dedupeById([...pool, ...extra]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1119,8 +1157,18 @@ async function attachSourcesAndLocations(
   const locationByTitle = new Map(locationEntries);
   // 관리자 거부 소스 + 뉴스 채널(isLowTrustSource)은 후보 풀에서 아예 뺀다.
   const approve = (pool: Source[]) => pool.filter((s) => !rejectedSourceIds.has(s.id) && !isLowTrustSource(s));
-  const poolByPlace = new Map(placePoolEntries.map(([place, pool]) => [place, approve(pool)]));
-  const blogPoolByPlace = new Map(matchedBlogEntries.map(([place, pool]) => [place, approve(pool)]));
+  const [poolByPlace, blogPoolByPlace] = await Promise.all([
+    Promise.all(
+      placePoolEntries.map(
+        async ([place, pool]) => [place, approve(await supplementBlogsForPlace(destination, place, pool))] as const
+      )
+    ).then((entries) => new Map(entries)),
+    Promise.all(
+      matchedBlogEntries.map(
+        async ([place, pool]) => [place, approve(await supplementBlogsForPlace(destination, place, pool))] as const
+      )
+    ).then((entries) => new Map(entries)),
+  ]);
   const transitPoolByQuery = new Map(transitPoolEntries.map(([query, pool]) => [query, approve(pool)]));
   const approvedFallbackPool = approve(fallbackPool);
 
