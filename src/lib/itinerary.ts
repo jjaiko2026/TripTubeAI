@@ -109,6 +109,14 @@ function requestSeedKey(request: TripRequest) {
   ].join("::");
 }
 
+/**
+ * itinerary_plan_cache 키. generateItinerary()와 프리워밍(src/lib/prewarm.ts)이 반드시 같은
+ * 공식을 쓰도록 한 곳에 둔다 — 이 키가 어긋나면 프리워밍한 뼈대가 캐시 히트하지 않는다.
+ */
+export function planCacheKeyFor(request: TripRequest, mustIncludePlaceIds: string[] = []): string {
+  return `${requestSeedKey(request)}::must=${[...mustIncludePlaceIds].sort().join(",")}`;
+}
+
 function resolveDestination(name: string) {
   return findDestination(name) ?? genericDestination(name.trim() || "미정 여행지");
 }
@@ -1350,7 +1358,7 @@ export async function generateItinerary(
   // 일정 하나가 통째로 fallback으로 떨어지면(특히 캐시되는 공개 예시 페이지에서) 지리적으로
   // 뒤죽박죽인 동선이 방문자에게 그대로 노출되므로, 일시적 오류(네트워크/쿼터 스파이크)에
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
-  const planCacheKey = `${requestSeedKey(request)}::must=${[...mustIncludePlaceIds].sort().join(",")}`;
+  const planCacheKey = planCacheKeyFor(request, mustIncludePlaceIds);
   const runAi = () =>
     generateItineraryWithAI(
       request,
