@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Star } from "lucide-react";
 import { SheetsSyncPanel } from "@/components/dashboard/sheets-sync-panel";
 import { KnowledgeSheetsSyncPanel } from "@/components/dashboard/knowledge-sheets-sync-panel";
 import { getKnowledgeReviewProgress } from "@/db/knowledge-queries";
-import { getAdminItineraryRows, getAdminUserRows } from "@/db/admin-queries";
+import { getAdminItineraryRows, getAdminUserRows, getOwnerRetentionStats } from "@/db/admin-queries";
 import { formatNumber, relativeTimeLabel } from "@/lib/format";
 import { isAdminUser } from "@/lib/admin";
 
@@ -29,12 +29,17 @@ export default async function AdminPage({
   }>;
 }) {
   const { userId } = await auth();
+  // 로그인 자체는 전반적으로 제거됐지만, admin은 지금처럼 Clerk 로그인 + ADMIN_USER_IDS로만
+  // 보호된다. Clerk 미로그인 방문자는 /sign-in으로, 로그인했지만 관리자가 아니면 notFound()로
+  // (존재 자체를 노출하지 않는다).
+  if (!userId) redirect("/sign-in");
   if (!isAdminUser(userId)) notFound();
 
-  const [knowledgeProgress, requestRows, userRows, params] = await Promise.all([
+  const [knowledgeProgress, requestRows, userRows, retentionStats, params] = await Promise.all([
     getKnowledgeReviewProgress(),
     getAdminItineraryRows(200),
     getAdminUserRows(100),
+    getOwnerRetentionStats(),
     searchParams,
   ]);
 
@@ -150,21 +155,25 @@ export default async function AdminPage({
         </CardContent>
       </Card>
 
-      {/* 사용자별 이용 현황 (Pipeline A — /plan 일정 생성 기준) */}
+      {/* 방문자별 이용 현황 (Pipeline A — /plan 일정 생성 기준, 소유권 쿠키 ownerId 기준) */}
       <Card className="mb-8">
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>사용자별 이용 현황</CardTitle>
+            <CardTitle>방문자별 이용 현황</CardTitle>
             <Badge variant="secondary">{userRows.length}명</Badge>
+            <Badge variant="outline">
+              재방문 비율 {Math.round(retentionStats.repeatRatio * 100)}% ({retentionStats.repeatOwners}/
+              {retentionStats.totalOwners}명)
+            </Badge>
           </div>
           <CardDescription>
-            로그인 사용자별로 일정을 몇 개 만들었는지, 어디를 가장 자주 계획했는지 집계했어요. 개인정보 노출을
-            막기 위해 Clerk 프로필은 조회하지 않고 user id만 표시합니다.
+            소유권 쿠키(ownerId, 로그인 불필요)별로 일정을 몇 개 만들었는지, 어디를 가장 자주 계획했는지
+            집계했어요. 이름·이메일 등 개인정보는 없고 쿠키 id만 표시합니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {userRows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">아직 로그인 사용자의 일정이 없어요.</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">아직 만들어진 일정이 없어요.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

@@ -81,7 +81,7 @@ export interface ItinerarySummary {
   createdAt: string;
 }
 
-/** 로그인한 사용자가 최근에 만든 일정을 다시 찾아갈 수 있게 요약 정보만 가져옵니다. */
+/** 소유자(쿠키 ownerId)가 최근에 만든 일정을 다시 찾아갈 수 있게 요약 정보만 가져옵니다. */
 export async function getRecentItinerariesForUser(userId: string, limit = 3): Promise<ItinerarySummary[]> {
   const db = getDb();
   const rows = await db
@@ -116,8 +116,9 @@ export async function deleteItinerary(id: string, userId: string): Promise<void>
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * userId를 넘기면 본인 소유 일정일 때만 반환합니다("조건 다시 입력" 프리필처럼 다른 사람의
- * 요청 내용을 노출하면 안 되는 조회에 사용). 결과 페이지 등 소유자 무관 조회는 생략합니다.
+ * userId(소유자 쿠키 ownerId)를 넘기면 본인 소유 일정일 때만 반환합니다("조건 다시 입력"
+ * 프리필처럼 다른 사람의 요청 내용을 노출하면 안 되는 조회에 사용). 결과 페이지 등 소유자
+ * 무관 조회는 생략합니다.
  */
 export const getItinerary = cache(async function getItinerary(
   id: string,
@@ -161,7 +162,7 @@ export async function getReviews(currentUserId?: string | null): Promise<Review[
   return rows.map((row) => ({
     id: row.id,
     // 수정 권한 판단에만 쓰는 값이라, 조회자 본인 후기에만 userId를 싣는다 —
-    // 다른 작성자의 Clerk id를 클라이언트로 내보내지 않는다.
+    // 다른 작성자의 소유자 쿠키 id를 클라이언트로 내보내지 않는다.
     userId: row.userId && row.userId === currentUserId ? row.userId : null,
     author: row.author,
     destination: row.destination,
@@ -195,8 +196,9 @@ export async function createReview(review: {
 
 /**
  * 본인이 쓴 후기 수정. (id, userId) 소유권이 맞을 때만 UPDATE하고, 맞으면 true를 반환한다
- * (updateItinerary와 같은 패턴). userId가 null인 비로그인 후기는 소유권을 증명할 수 없어
- * 수정 대상이 아니다. totalCost/itineraryId 등 폼에 없는 컬럼은 건드리지 않는다.
+ * (updateItinerary와 같은 패턴). userId는 이제 소유자 쿠키(ownerId) 값이며, 과거에 저장된
+ * userId가 null인 행(쿠키가 없었던 시절의 후기)은 소유권을 증명할 수 없어 수정 대상이 아니다.
+ * totalCost/itineraryId 등 폼에 없는 컬럼은 건드리지 않는다.
  */
 export async function updateReview(
   id: string,

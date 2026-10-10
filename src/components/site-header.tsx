@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { Plane } from "lucide-react";
-import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
-import { Button } from "@/components/ui/button";
 import { MobileNav } from "@/components/mobile-nav";
 import { isAdminUser } from "@/lib/admin";
 
@@ -44,19 +42,6 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <Show when="signed-in">
-            <UserButton />
-          </Show>
-          <Show when="signed-out">
-            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
-              <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-                로그인
-              </Button>
-            </SignInButton>
-            <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
-              <Button size="sm">일정 만들기</Button>
-            </SignInButton>
-          </Show>
           <MobileNav links={navLinks} />
         </div>
       </div>
