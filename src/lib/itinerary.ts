@@ -902,6 +902,18 @@ function isPlaceMatch(source: Source, place: string): boolean {
   return sourceText(source).some((t) => t?.includes(place));
 }
 
+/**
+ * 블로그는 네이버 유사도 검색이라 "제주도 {장소}"에서 장소명이 없고 목적지 키워드만 걸린 무관한 글
+ * (세제개편안, 타 지역 여행기 등)이 섞인다. 점수는 낮아도 후보가 모자라면 채워 넣어졌으므로,
+ * 블로그는 제목/스니펫에 장소명이 실제로 있을 때만 그 항목의 참고자료로 인정한다. 영상은 그대로.
+ */
+function isRelevantToPlace(source: Source, place: string): boolean {
+  if (source.kind !== "blog") return true;
+  const compact = (s: string) => s.replace(/\s+/g, "");
+  const target = compact(place);
+  return sourceText(source).some((t) => t && compact(t).includes(target));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 검색 신뢰도 필터 — "장소 참고자료"로서 부적절한 후보를 걸러내거나 뒤로 민다.
 //
@@ -1153,7 +1165,7 @@ async function attachSourcesAndLocations(
       const matchedItem = itemByTitle.get(title)!;
       const blogPool = blogPoolByPlace.get(placeByTitle.get(title)!) ?? [];
       const pickedBlog = blogPool
-        .filter((s) => !usedSourceIds.has(s.id))
+        .filter((s) => !usedSourceIds.has(s.id) && isRelevantToPlace(s, placeByTitle.get(title)!))
         .map((source) => ({ source, score: scoreSourceForItem(matchedItem, source, request, usedChannels) }))
         .sort((a, b) => b.score - a.score)
         .map((r) => r.source)
@@ -1169,7 +1181,7 @@ async function attachSourcesAndLocations(
     const place = placeByTitle.get(title)!;
     const placePool = poolByPlace.get(place) ?? [];
     const sorted = placePool
-      .filter((s) => !usedSourceIds.has(s.id))
+      .filter((s) => !usedSourceIds.has(s.id) && isRelevantToPlace(s, place))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
       .map((r) => r.source);
@@ -1192,7 +1204,7 @@ async function attachSourcesAndLocations(
     if (picked.length >= SOURCES_PER_ITEM) continue;
 
     const widenPool = approvedFallbackPool
-      .filter((s) => !usedSourceIds.has(s.id))
+      .filter((s) => !usedSourceIds.has(s.id) && isRelevantToPlace(s, placeByTitle.get(title)!))
       .map((source) => ({ source, score: scoreSourceForItem(item, source, request, usedChannels) }))
       .sort((a, b) => b.score - a.score)
       .map((r) => r.source);
