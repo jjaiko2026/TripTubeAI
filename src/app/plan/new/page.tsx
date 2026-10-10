@@ -1,22 +1,22 @@
-import { auth } from "@clerk/nextjs/server";
 import { Sparkles } from "lucide-react";
 import { TripPlanner } from "@/components/plan/trip-planner";
 import { RecentItineraries } from "@/components/plan/recent-itineraries";
 import { getItinerary, getRecentItinerariesForUser } from "@/db/queries";
+import { getOwnerId } from "@/lib/owner";
 
 export default async function PlanNewPage({
   searchParams,
 }: {
   searchParams: Promise<{ editFrom?: string }>;
 }) {
-  // 비로그인도 일정을 만들어 결과까지 볼 수 있다(결과 페이지는 원래 소유자 무관 공개 조회).
-  // 저장·내 일정·수정은 여전히 로그인 사용자만 — createItineraryAction이 userId ?? null로 처리한다.
-  const { userId } = await auth();
+  // 로그인 없이 누구나 일정을 만들고, 저장·내 일정·수정까지 소유권 쿠키(ownerId)로 할 수 있다
+  // (createItineraryAction이 getOrCreateOwnerId()로 처리).
+  const ownerId = await getOwnerId();
 
   const { editFrom } = await searchParams;
   const [recentItineraries, editItinerary] = await Promise.all([
-    userId ? getRecentItinerariesForUser(userId, 3) : Promise.resolve([]),
-    editFrom && userId ? getItinerary(editFrom, userId) : Promise.resolve(null),
+    getRecentItinerariesForUser(ownerId, 3),
+    editFrom ? getItinerary(editFrom, ownerId) : Promise.resolve(null),
   ]);
 
   return (
@@ -34,11 +34,6 @@ export default async function PlanNewPage({
           <p className="mt-2 text-muted-foreground">
             몇 가지 조건만 알려주시면, 최근 유튜브·블로그 정보를 분석해 일정을 짜드려요.
           </p>
-          {!userId && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              로그인 없이 바로 만들어 볼 수 있어요. 로그인하면 만든 일정이 저장되고 나중에 수정할 수 있습니다.
-            </p>
-          )}
         </div>
       </div>
       {/* PHASE 6 — editItinerary가 null이면(id 없음/존재하지 않음/본인 소유 아님, getItinerary()가

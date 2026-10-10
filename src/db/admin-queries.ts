@@ -116,9 +116,9 @@ export interface AdminUserRow {
 }
 
 /**
- * 로그인 사용자별 이용 요약 (Pipeline A — /plan 일정 생성 기준). Clerk 프로필은 조회하지
- * 않고 userId만 노출한다(불필요한 개인정보 노출 방지). topDestination은 Postgres
- * mode() within group으로 가장 자주 만든 목적지를 뽑는다.
+ * 소유자(쿠키 ownerId)별 이용 요약 (Pipeline A — /plan 일정 생성 기준). 로그인이 없어졌으므로
+ * 이제 로그인 여부와 무관하게 모든 방문자가 대상이다. 이름/이메일 등 PII는 없고 쿠키 id만
+ * 노출한다. topDestination은 Postgres mode() within group으로 가장 자주 만든 목적지를 뽑는다.
  */
 export async function getAdminUserRows(limit = 100): Promise<AdminUserRow[]> {
   const db = getDb();
@@ -141,4 +141,34 @@ export async function getAdminUserRows(limit = 100): Promise<AdminUserRow[]> {
     lastCreatedAt: new Date(row.lastCreatedAt).toISOString(),
     topDestination: row.topDestination,
   }));
+}
+
+export interface OwnerRetentionStats {
+  totalOwners: number;
+  repeatOwners: number;
+  /** 0~1. 소유자가 없으면(초기 상태) 0. */
+  repeatRatio: number;
+}
+
+/**
+ * 로그인이 없어져 모든 방문자가 소유자 쿠키(ownerId)를 갖게 된 뒤, "한 번 쓰고 끝" vs
+ * "다시 와서 또 만든" 비율을 본다 — getAdminUserRows()의 limit 샘플이 아니라 전체 소유자
+ * 기준이라야 정확하므로 별도 쿼리로 둔다.
+ */
+export async function getOwnerRetentionStats(): Promise<OwnerRetentionStats> {
+  const db = getDb();
+  const rows = await db
+    .select({ tripCount: sql<number>`count(*)` })
+    .from(itineraries)
+    .where(sql`${itineraries.userId} is not null`)
+    .groupBy(itineraries.userId);
+
+  const totalOwners = rows.length;
+  const repeatOwners = rows.filter((row) => Number(row.tripCount) > 1).length;
+
+  return {
+    totalOwners,
+    repeatOwners,
+    repeatRatio: totalOwners > 0 ? repeatOwners / totalOwners : 0,
+  };
 }

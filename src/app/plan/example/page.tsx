@@ -1,7 +1,6 @@
+import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { unstable_cache } from "next/cache";
-import { SignInButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
 import { generateItinerary } from "@/lib/itinerary";
@@ -32,25 +31,20 @@ const getExampleItinerary = unstable_cache(
 );
 
 export default async function PlanExamplePage() {
-  const { userId } = await auth();
   const itinerary = await getExampleItinerary();
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-      {!userId && (
-        <div className="mb-8 flex flex-col items-center gap-3 rounded-xl border bg-accent/40 px-6 py-6 text-center">
-          <Sparkles className="h-6 w-6 text-primary" />
-          <p className="font-medium">
-            지금 보시는 일정은 <span className="text-primary">예시 화면</span>입니다.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            로그인하면 원하는 여행지·기간·목적에 맞춘 나만의 일정을 직접 만들 수 있어요.
-          </p>
-          <SignInButton mode="redirect" forceRedirectUrl="/plan/new">
-            <Button>로그인하고 내 일정 만들기</Button>
-          </SignInButton>
-        </div>
-      )}
+      <div className="mb-8 flex flex-col items-center gap-3 rounded-xl border bg-accent/40 px-6 py-6 text-center">
+        <Sparkles className="h-6 w-6 text-primary" />
+        <p className="font-medium">
+          지금 보시는 일정은 <span className="text-primary">예시 화면</span>입니다.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          원하는 여행지·기간·목적에 맞춘 나만의 일정을 직접 만들 수 있어요.
+        </p>
+        <Button render={<Link href="/plan/new" />}>내 일정 만들기</Button>
+      </div>
 
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">

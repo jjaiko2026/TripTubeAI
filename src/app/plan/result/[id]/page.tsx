@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { auth } from "@clerk/nextjs/server";
-import { SignInButton } from "@clerk/nextjs";
 import { ArrowLeft, RefreshCcw, Sparkles, Star, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ItineraryView } from "@/components/itinerary/itinerary-view";
@@ -14,6 +12,7 @@ import { DeleteItineraryButton } from "@/components/plan/delete-itinerary-button
 import { RegenerateItineraryButton } from "@/components/plan/regenerate-itinerary-button";
 import { getItinerary } from "@/db/queries";
 import { monthLabel } from "@/lib/format";
+import { getOwnerId } from "@/lib/owner";
 
 // getItinerary()는 React cache()로 감싸져 있어(§db/queries.ts) 아래 페이지 컴포넌트가
 // 같은 id로 다시 호출해도 같은 요청 안에서는 DB를 한 번만 조회한다.
@@ -56,11 +55,11 @@ export default async function PlanResultPage({
     regen === "done" ? "done" : regen === "stillbusy" ? "stillbusy" : regen === "failed" ? "failed" : null;
   // 결과 페이지는 의도적으로 소유자 무관 공개 조회다(공유 링크 지원, src/db/queries.ts
   // getItinerary() 주석 참고) — 이 동작은 바꾸지 않는다. 일정 항목 삭제 UI를 보여줄지만
-  // 별도로 소유자 일치 여부를 확인한다(같은 getItinerary()를 userId까지 넘겨 한 번 더 호출).
-  const { userId } = await auth();
+  // 별도로 소유자 일치 여부를 확인한다(같은 getItinerary()를 ownerId까지 넘겨 한 번 더 호출).
+  const ownerId = await getOwnerId();
   const [itinerary, ownedItinerary] = await Promise.all([
     getItinerary(id),
-    userId ? getItinerary(id, userId) : Promise.resolve(null),
+    getItinerary(id, ownerId),
   ]);
   if (!itinerary) notFound();
   const canManage = ownedItinerary !== null;
@@ -178,22 +177,14 @@ export default async function PlanResultPage({
         <p className="text-sm text-muted-foreground">
           다녀오신 후 다른 여행자들을 위해 후기를 남겨주세요.
         </p>
-        {userId ? (
-          <WriteReviewDialog
-            renderAs={<Button />}
-            defaultDestination={itinerary.destinationName}
-            defaultNights={itinerary.request.nights}
-            itineraryId={id}
-          >
-            <Star className="h-4 w-4" /> 후기 남기기
-          </WriteReviewDialog>
-        ) : (
-          <SignInButton mode="redirect" forceRedirectUrl={`/plan/result/${id}`}>
-            <Button>
-              <Star className="h-4 w-4" /> 로그인하고 후기 남기기
-            </Button>
-          </SignInButton>
-        )}
+        <WriteReviewDialog
+          renderAs={<Button />}
+          defaultDestination={itinerary.destinationName}
+          defaultNights={itinerary.request.nights}
+          itineraryId={id}
+        >
+          <Star className="h-4 w-4" /> 후기 남기기
+        </WriteReviewDialog>
       </div>
     </div>
   );
