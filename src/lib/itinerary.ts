@@ -12,6 +12,7 @@ import { mulberry32, hashSeed, seededShuffle } from "@/lib/mock/rng";
 import { mockSearchBlog, mockSearchYoutube } from "@/lib/mock/sources";
 import { fetchYoutubeVideos } from "@/lib/real/youtube";
 import { fetchNaverBlogs } from "@/lib/real/naver-blog";
+import { fetchNaverLocalPlaces } from "@/lib/real/naver-local";
 import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
 import { getCachedSources, saveCachedSources, normalizeQuery } from "@/db/source-cache";
@@ -246,7 +247,9 @@ async function generateItineraryWithAI(
   // 중 일부). 최종 일정 구성(날짜/순서/동선)은 여전히 AI가 결정하되, 이 id들은 "사용자가 직접
   // 고른 곳이니 반드시 포함하라"는 강한 신호로만 verifiedPlaces 프롬프트에 얹는다. 비어 있으면
   // (기본값) 기존 동작과 100% 동일 — place-itinerary.ts의 isUserSelected와 같은 취지.
-  mustIncludePlaceIds: string[] = []
+  mustIncludePlaceIds: string[] = [],
+  // researchDestinationViaWeb()이 찾아온 실시간 웹 검색 결과(없으면 undefined — 기존 동작과 동일).
+  webResearch?: string
 ): Promise<PlanDay[]> {
   const mustIncludeSet = new Set(mustIncludePlaceIds);
   const activityCatalog = destination.activities.slice(0, 6).map((a) => ({
@@ -266,7 +269,10 @@ async function generateItineraryWithAI(
       "있다면 그 어떤 조건보다도 최우선으로 반영하고, 나머지 빈 자리만 대표 활동 목록으로 채우세요. " +
       "verifiedPlaces/regionalKnowledge가 있다면 그 지역에 대해 검증된 참고 자료입니다 — 있으면 " +
       "activityCatalog보다 우선 활용해 항목의 title을 그 장소명 그대로 쓰되, 목적지 자체의 창작 판단이나 " +
-      "request.notes를 대체하지는 않습니다. 구체적인 활용 방법과 주의사항은 아래 instructions를 " +
+      "request.notes를 대체하지는 않습니다. webResearch가 있다면 방금 실시간 웹 검색으로 찾은, 실제로 " +
+      "존재하는 최신 장소/맛집/숙소 정보입니다 — verifiedPlaces가 없는 목적지에서는 당신의 기억만으로 " +
+      "장소를 지어내지 말고 webResearch에 나온 실제 이름을 우선 활용하세요(단, request.notes/" +
+      "verifiedPlaces보다는 우선순위가 낮습니다). 구체적인 활용 방법과 주의사항은 아래 instructions를 " +
       "따르세요.",
     prompt: JSON.stringify({
       destination: destination.name,
@@ -286,6 +292,7 @@ async function generateItineraryWithAI(
           ? verifiedPlaces.map((p) => verifiedPlacePayload(p, placeRegionLabelById, mustIncludeSet.has(p.id)))
           : undefined,
       regionalKnowledge: regionalKnowledge.length > 0 ? regionalKnowledge : undefined,
+      webResearch: webResearch || undefined,
       instructions: [
         `총 ${days}일 일정을 구성하세요 (day: 1~${days}).`,
         request.notes
@@ -361,6 +368,12 @@ async function generateItineraryWithAI(
             "조건이 아닙니다. 관련 있는 내용이 있으면 설명을 보강하는 데 활용하고, 없거나 부족해도 나머지 " +
             "정보(verifiedPlaces, activityCatalog, 일반 지식)만으로 정상적으로 일정을 구성하세요."
           : null,
+        webResearch
+          ? "webResearch에 적힌 장소/맛집/숙소 이름은 방금 실시간 검색으로 확인한 실존하는 곳입니다 — " +
+            "verifiedPlaces가 비어 있는 목적지라면 당신의 기억에만 의존해 장소명을 지어내지 말고, " +
+            "거기서 request.purposes/memberType/notes에 맞는 곳을 적극적으로 골라 title에 그대로 쓰세요. " +
+            "다만 webResearch에도 맞는 곳이 없는 빈 자리는 activityCatalog나 일반 지식으로 채워도 됩니다."
+          : null,
         "각 항목의 tags는 request.purposes의 id 중에서 선택하세요. priority가 core인 목적은 일정 전체에서 " +
           "여러 항목에 걸쳐 확실히 드러나도록 최우선으로 반영하고, important는 가능하면, normal은 여유가 " +
           "있을 때만 반영하세요. 단, 공항·터미널 도착/출발, 이동, 수속, 호텔 체크인처럼 관광 활동이 아닌 " +
@@ -401,6 +414,129 @@ async function generateItineraryWithAI(
   }
 
   return output.days;
+}
+
+/**
+ * generateItineraryWithAI가 일정을 창작하기 전에, 실시간 검색으로 그 목적지의 실존하는
+ * 업체/장소명을 조사합니다. verifiedPlaces/regionalKnowledge가 비어 있는 대다수 목적지에서
+ * AI가 기억만으로 장소명을 지어내는 것을 막기 위한 보조 자료입니다.
+ *
+ * Gemini의 구글 검색 그라운딩(tools)이 아니라 네이버 지역 검색 API를 씁니다 — 이유는:
+ * (1) 그라운딩 tools는 구조화 출력(Output.object)과 한 호출에 같이 쓰는 게 표준
+ * generateContent 경로에서 안전하다는 근거가 없고, (2) 이 조사만으로도 AI 생성/자가검토용
+ * Gemini 호출 쿼터(무료 티어 기준 모델당 하루 20회로 확인됨)를 추가로 깎아먹는다 — 일정 하나당
+ * Gemini 호출이 3배로 늘어 기존에 이미 알려진 "쿼터 부족 → 폴백 일정" 문제를 악화시킨다.
+ * 네이버 지역 검색은 블로그 검색과 같은 자격증명·쿼터 풀을 쓰고 이 코드베이스는 거기 상한을
+ * 두지 않으므로(§real/naver-blog.ts와 동일 방침), AI 호출 예산과 완전히 분리된다.
+ *
+ * 네이버 지역 검색은 국내 업체 DB라 해외 목적지는 다루지 않는다 — request.region이 "해외"면
+ * 호출 자체를 생략하고 undefined를 반환해(오늘과 동일하게) AI의 일반 지식에 맡긴다.
+ * 어떤 이유로든 실패해도 undefined를 반환해 예외를 절대 밖으로 던지지 않는다.
+ */
+async function researchDestinationViaWeb(
+  request: TripRequest,
+  destination: DestinationProfile
+): Promise<string | undefined> {
+  if (request.region === "해외") return undefined;
+
+  try {
+    // 1번 쿼리가 이미 "맛집"을 다루므로, 2번 쿼리는 food가 아닌 목적 중 첫 번째로 — 사용자가
+    // food 목적만 골랐다면(겹치는 목적이 없음) 범용 "가볼만한곳"으로 채운다.
+    const nonFoodPurpose = request.purposes.find((p) => p.id !== "food");
+    const secondQueryLabel = nonFoodPurpose ? PURPOSE_LABELS[nonFoodPurpose.id].split("·")[0] : "가볼만한곳";
+    const queries = Array.from(
+      new Set([`${destination.name} 맛집`, `${destination.name} ${secondQueryLabel}`])
+    );
+    const results = await Promise.all(queries.map((q) => fetchNaverLocalPlaces(q, 5)));
+    const places = results.flat().filter((p) => p.title);
+    if (places.length === 0) return undefined;
+
+    const lines = places.map((p) =>
+      `- ${p.title}${p.category ? ` (${p.category})` : ""}${p.address ? ` — ${p.address}` : ""}`
+    );
+    return lines.join("\n");
+  } catch (error) {
+    console.error("web research for itinerary failed, proceeding without it:", error);
+    return undefined;
+  }
+}
+
+/**
+ * generateItineraryWithAI가 만든 초안을 webResearch/verifiedPlaces/regionalKnowledge에 다시
+ * 비추어 점검하는 자가검토 패스입니다. 문제가 없으면 그대로, 실존 여부가 의심되거나 동선이
+ * 부자연스러운 항목만 고쳐서 같은 스키마로 돌려받습니다. planSchema를 그대로 재사용합니다.
+ */
+async function reviewItineraryPlan(
+  plan: PlanDay[],
+  request: TripRequest,
+  destination: DestinationProfile,
+  webResearch: string | undefined,
+  verifiedPlaces: PlaceWithDetails[],
+  regionalKnowledge: (RegionalKnowledgeItem & { region: string })[]
+): Promise<PlanDay[]> {
+  // draftPlan.dayRegions는 원래 생성 단계에서만 쓰던 중간 산물이라 plan(PlanDay[])에는 안
+  // 남아있다 — 검수자에게 날짜별 소지역을 보여주려고 shortLabel(그 날의 핵심 지역/장소명)로
+  // 근사한다. 스키마 검증 대상이 아니라 참고용 컨텍스트이므로 근사해도 무방하다.
+  const dayRegions = plan.map((d) => d.shortLabel);
+  const { output } = await generateTextWithFallback(AI_MODELS, (model) => generateText({
+    model,
+    output: Output.object({ schema: planSchema }),
+    system:
+      "당신은 TripTube AI의 여행 일정 검수자입니다. 다른 AI가 만든 일정 초안(draftPlan)을 " +
+      "webResearch/verifiedPlaces/regionalKnowledge에 비추어 다시 점검합니다. 각 항목의 title이 " +
+      "실제로 존재하는 장소를 가리키는지, 같은 날 동선이 지리적으로 자연스러운지 확인하세요. " +
+      "문제가 있는 항목만 webResearch/verifiedPlaces에 나온 실제 장소로 고치고, 문제가 없으면 " +
+      "draftPlan을 그대로 반환하세요 — 멀쩡한 항목을 임의로 바꾸지 마세요. day 수와 순서는 " +
+      "draftPlan과 동일하게 유지하세요.",
+    prompt: JSON.stringify({
+      destination: destination.name,
+      region: request.region,
+      draftPlan: { dayRegions, days: plan },
+      webResearch: webResearch || undefined,
+      verifiedPlaces: verifiedPlaces.length > 0 ? verifiedPlaces.map((p) => p.name) : undefined,
+      regionalKnowledge: regionalKnowledge.length > 0 ? regionalKnowledge : undefined,
+    }),
+  }));
+
+  if (output.days.length === 0 || output.days.every((d) => d.items.length === 0)) {
+    throw new Error("AI review returned an empty itinerary plan");
+  }
+  return output.days;
+}
+
+/**
+ * generateItinerary()의 runAi가 호출하는 진입점 — 조사(researchDestinationViaWeb) → 생성
+ * (generateItineraryWithAI) → 자가검토(reviewItineraryPlan) 3단계를 하나로 묶습니다.
+ * 조사는 자체적으로 실패를 삼키고(undefined), 검토도 실패 시 검토 전 plan을 그대로 반환하므로
+ * 이 함수가 던지는 예외는 오직 generateItineraryWithAI의 실패뿐입니다 — 호출부의 기존
+ * 재시도/폴백 로직(generateItinerary 본문)을 그대로 적용받습니다.
+ */
+async function generateItineraryWithAIAndReview(
+  request: TripRequest,
+  destination: DestinationProfile,
+  days: number,
+  verifiedPlaces: PlaceWithDetails[],
+  placeRegionLabelById: Map<string, string>,
+  regionalKnowledge: (RegionalKnowledgeItem & { region: string })[],
+  mustIncludePlaceIds: string[] = []
+): Promise<PlanDay[]> {
+  const webResearch = await researchDestinationViaWeb(request, destination);
+  const plan = await generateItineraryWithAI(
+    request,
+    destination,
+    days,
+    verifiedPlaces,
+    placeRegionLabelById,
+    regionalKnowledge,
+    mustIncludePlaceIds,
+    webResearch
+  );
+  try {
+    return await reviewItineraryPlan(plan, request, destination, webResearch, verifiedPlaces, regionalKnowledge);
+  } catch (error) {
+    console.error("itinerary self-review failed, keeping pre-review plan:", error);
+    return plan;
+  }
 }
 
 /** area가 처음 등장하는 순서를 유지한 채(=지리적으로 이어지는 순서) activity를 묶습니다. */
@@ -897,8 +1033,11 @@ function freshnessScore(source: Source): number {
   return 0.1;
 }
 
+// YouTube 영상 제목은 "제주 2박3일 브이로그 EP3"처럼 시리즈명뿐이라 특정 장소명이 거의 안
+// 드러나지만, videos.list로 이미 받아온 전체 description(코스 설명)에는 장소명이 흔히 등장한다.
+// 그래서 블로그의 snippet과 동등하게 description도 매칭 대상에 포함한다.
 function sourceText(source: Source): (string | undefined)[] {
-  return source.kind === "youtube" ? [source.title] : [source.title, source.snippet];
+  return source.kind === "youtube" ? [source.title, source.description] : [source.title, source.snippet];
 }
 
 function channelOrSite(source: Source): string {
@@ -911,12 +1050,13 @@ function isPlaceMatch(source: Source, place: string): boolean {
 }
 
 /**
- * 블로그는 네이버 유사도 검색이라 "제주도 {장소}"에서 장소명이 없고 목적지 키워드만 걸린 무관한 글
- * (세제개편안, 타 지역 여행기 등)이 섞인다. 점수는 낮아도 후보가 모자라면 채워 넣어졌으므로,
- * 블로그는 제목/스니펫에 장소명이 실제로 있을 때만 그 항목의 참고자료로 인정한다. 영상은 그대로.
+ * 네이버 블로그는 유사도(sim) 검색, 유튜브는 relevance 검색이라 둘 다 "제주도 {장소}"에서
+ * 장소명이 없고 목적지 키워드만 걸린 무관한 결과(세제개편안 블로그, "제주 브이로그 10편" 같은
+ * 시리즈 영상 등)가 점수 하한 없이 섞인다. 점수는 낮아도 후보가 모자라면 fillToKindQuota로
+ * 그대로 채워졌으므로, 블로그·영상 모두 제목/스니펫(또는 영상 description)에 장소명이 실제로
+ * 있을 때만 그 항목의 참고자료로 인정한다.
  */
 function isRelevantToPlace(source: Source, place: string): boolean {
-  if (source.kind !== "blog") return true;
   const compact = (s: string) => s.replace(/\s+/g, "");
   // 항목 제목은 "협재해수욕장 산책"처럼 고유명사 뒤에 행동어가 붙는 일이 많아, 전체 문구가 아니라
   // 첫 토큰(고유명사)만 있어도 그 장소를 다룬 글로 본다. 토큰이 하나뿐이면 전체로 비교한다.
@@ -1420,7 +1560,7 @@ export async function generateItinerary(
   // 대비해 한 번 재시도한 뒤에만 fallback으로 넘어갑니다.
   const planCacheKey = planCacheKeyFor(request, mustIncludePlaceIds);
   const runAi = () =>
-    generateItineraryWithAI(
+    generateItineraryWithAIAndReview(
       request,
       destination,
       days,

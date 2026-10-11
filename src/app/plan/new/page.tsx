@@ -4,6 +4,12 @@ import { RecentItineraries } from "@/components/plan/recent-itineraries";
 import { getItinerary, getRecentItinerariesForUser } from "@/db/queries";
 import { getOwnerId } from "@/lib/owner";
 
+// createItineraryAction(§lib/actions.ts)이 호출하는 generateItinerary가 이제 그라운딩 검색 →
+// 생성 → 자가검토 최대 3번의 순차 Gemini 호출을 하므로, 플랫폼 기본 Server Action 제한보다
+// 여유를 둔다. Server Action의 maxDuration은 action 파일이 아니라 그 action을 쓰는 이
+// 라우트 세그먼트(Server Component)에서 지정해야 적용된다.
+export const maxDuration = 120;
+
 export default async function PlanNewPage({
   searchParams,
 }: {

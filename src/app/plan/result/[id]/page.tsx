@@ -14,6 +14,12 @@ import { getItinerary } from "@/db/queries";
 import { monthLabel } from "@/lib/format";
 import { getOwnerId } from "@/lib/owner";
 
+// RegenerateItineraryButton이 호출하는 regenerateItineraryAction(§lib/actions.ts)도
+// generateItinerary를 다시 타므로(그라운딩 검색 → 생성 → 자가검토, 최대 3번 순차 Gemini
+// 호출) 이 라우트에도 동일하게 여유를 둔다 — maxDuration은 action 파일이 아니라 그 action을
+// 쓰는 라우트 세그먼트(Server Component)에서 지정해야 적용된다.
+export const maxDuration = 120;
+
 // getItinerary()는 React cache()로 감싸져 있어(§db/queries.ts) 아래 페이지 컴포넌트가
 // 같은 id로 다시 호출해도 같은 요청 안에서는 DB를 한 번만 조회한다.
 export async function generateMetadata({
