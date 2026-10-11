@@ -16,7 +16,7 @@ import {
   updateItinerary,
   updateReview,
 } from "@/db/queries";
-import type { MemberType, Region, TripPurpose, TripRequest } from "@/lib/types";
+import type { MemberType, Region, TripRequest } from "@/lib/types";
 import { normalizeTripPurposes } from "@/lib/purposes";
 
 /** 폼의 숨은 input(purposesJson)에 담긴 값을 파싱합니다. 조작되거나 비어 있어도 조용히 빈 배열로 대체합니다. */

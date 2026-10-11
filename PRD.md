@@ -92,7 +92,7 @@ TripTube AI는 매 요청마다 인터넷을 처음부터 검색하는 서비스
 
 | 단계 | 사용자 행동 | 시스템 동작 | 현재 구현 |
 |---|---|---|---|
-| 진입 | 랜딩(`/`)에서 "무료로 일정 만들기" | 비로그인 → 예시(`/plan/example`)·로그인 유도 / 로그인 → `/plan/new` | ✅ |
+| 진입 | 랜딩(`/`)에서 "무료로 일정 만들기" | 로그인 없이 `/plan/new` 또는 예시(`/plan/example`) (§27.7) | ✅ |
 | 요청 입력 | 폼 또는 챗봇으로 조건 입력 | `TripRequest` 확정 (목적지·지역·구성원·인원·박수·월·목적+우선순위·자유 notes) | ✅ 폼 + 챗봇(`trip-chat`) |
 | 요구 해석 | — | 나라 단위 입력이면 도시로 되묻기, 국내/해외 판정, 목적→우선순위 | ✅ 챗봇/폼 |
 | 장소·지식 확보 | — | 지원 지역이면 TourAPI/Knowledge 조회 → AI 프롬프트 참고자료로 공급, 부족분은 장소 단위 외부 검색 | ✅ (§9, §11) |
@@ -320,7 +320,7 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 ## 18. Review / Feedback
 
 - `/reviews` — `createReviewAction` → `reviews` 테이블(author · destination · rating · title · content · tripMonth · nights · `itineraryId`).
-- 결과 페이지에서 "후기 남기기" CTA(`WriteReviewDialog`, 여행지·박수 프리필) — 로그인 필수(§27.6), 작성 시 그 `itineraryId`를 함께 저장.
+- 결과 페이지에서 "후기 남기기" CTA(`WriteReviewDialog`, 여행지·박수 프리필) — 로그인 불필요·소유권 쿠키 기반(§27.7, §27.6의 로그인 필수는 대체됨), 작성 시 그 `itineraryId`를 함께 저장.
 - 후기 카드에서 연결된 일정으로 가는 링크("이 후기의 일정 보기 →", `review-card.tsx`). 본인 후기는 수정 가능(§27.6).
 - 아직 없는 것: 후기 평점·본문을 장소/코스 랭킹 신호로 반영하는 경로 — §19/Post-MVP.
 
@@ -421,7 +421,7 @@ YouTube는 **1차 장소 검색원이 아니다.** 확정된 일정지에 대한
 | DB 스키마 | `src/db/schema.ts` (17 테이블: 코어 7 + ATKB 10) | ✅ |
 | 분석 로그 | `pipeline_b_events` | 🟡 `/places` 흐름 지표 — 폐지 후속 정리 대상 (§27.1) |
 
-**스택:** Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 · shadcn/Base UI · Clerk · Neon Postgres + Drizzle · Vercel · AI SDK v7.
+**스택:** Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 · shadcn/Base UI · Clerk(`/admin` 전용) · Neon Postgres + Drizzle · Vercel · AI SDK v7.
 
 ## 25. Implementation Priorities
 
@@ -447,7 +447,7 @@ v3.0 데모 가치 기준 우선순위 4개 — **모두 구현 완료**(`dcbf94
 
 ---
 
-## 27. v3.0 이후 반영 사항 (2026-08-30)
+## 27. v3.0 이후 반영 사항 (2026-10-11 갱신)
 
 v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항 중 이 절과 상충하는 서술은 이 절이 우선한다.
 
@@ -502,6 +502,34 @@ v3.0(2026-08-27) 문서화 이후 실제 배포·정리된 내용. 본문 조항
 - PR #57이 폴백으로 넣은 `gemini-3.6-flash-lite`는 이 API 키에서 **404(존재하지 않는 모델)**라 체인이 무력했다. 프로덕션 키 직접 확인(2026-08-31): `gemini-3.6-flash`는 큰 구조화 출력 호출에서 **429 쿼터 초과**, `gemini-3.5-flash`/`gemini-3.5-flash-lite`는 정상.
 - `smartModels` 폴백 → `gemini-3.5-flash`, `fastModels` 폴백 → `gemini-3.5-flash-lite`. primary는 여전히 `gemini-3.6-flash`(쿼터 풀리면 자동 복귀).
 - **근본 병목은 무료 티어 일일 쿼터** — 체인·캐시는 완충일 뿐, 유료 키가 실제 해결책(미결). §20/§27.2의 "두 티어 모두 gemini-3.6-flash"는 여전히 primary 기준으로 유효.
+
+### 27.7 로그인 제거(소유권 쿠키) / 프리워밍 / 출처 관련성 / 실시간 조사 (2026-10-10~11, PR #62~#64 + 직커밋 2건)
+
+**로그인 제거 → 소유권 쿠키 (PR #63)** — §27.6의 "후기 작성 로그인 필수"를 **대체**한다.
+- 일반 사용자 로그인 요건을 전부 제거. 서버가 방문자마다 발급하는 httpOnly 쿠키 `ownerId`(1년, `src/lib/owner.ts` `getOwnerId`/`getOrCreateOwnerId`)로 소유권을 판단. 일정 생성·수정·삭제·재생성, 장소 추가/제거, 후기 작성·수정의 모든 소유권 검사가 `auth().userId` → `ownerId`로 교체.
+- 스키마 변경 없음 — `itineraries.user_id`/`reviews.user_id`(nullable text)에 Clerk id 대신 쿠키 값을 저장.
+- **`/admin`만 Clerk 로그인 유지**(`ADMIN_USER_IDS`). 비로그인 접근은 `/sign-in`으로 리다이렉트. 관리자 대시보드에 재방문 비율(`getOwnerRetentionStats`) 추가.
+- **다른 기기로 옮기기**: `OWNER_RECOVERY_SECRET`으로 서명한 30일 유효 토큰을 `/recover`가 검증해 쿠키를 이전(DB 없이 stateless). OS 공유시트·링크 복사·mailto 폴백. **운영 배포 시 Vercel에 `OWNER_RECOVERY_SECRET` 필수.**
+- `/plan/example`에 `loading.tsx` 추가(캐시 미스 시 화면 정지처럼 보이던 문제).
+- 한계: 쿠키 삭제·기기 변경 시 소유권 상실(위 이전 링크로만 복구).
+
+**일정 캐시 프리워밍 (PR #62)**
+- Gemini 무료 일일 쿼터 소진 시 심사자가 뼈대(폴백)만 보는 리스크 방어. `src/lib/prewarm.ts`의 `PREWARM_SCENARIOS`(§23 데모 3박4일 도쿄 가족 힐링+맛집 + 국내 상위 지역)를 `itinerary_plan_cache`에 미리 채운다. 키 공식은 `planCacheKeyFor()`로 export해 생성부와 공유.
+- 실행: `/api/cron/prefetch`(기존 크론 재사용, `maxDuration=300`) 또는 `npm run prewarm`(심사 직전 수동). 캐시에 없는 조합만 순차 생성, 항목별 try/catch.
+- 키가 요청 전체 해시라 데모는 **시나리오 값 그대로 입력**해야 히트. 가장 확실한 방법은 쿼터 넉넉할 때 UI에서 데모 입력대로 1회 생성.
+
+**출처(블로그/영상) 관련성 (PR #64 + 8204f8b)**
+- 블로그는 제목/스니펫에 **장소명(공백 무시)** 이 있을 때만 후보로 인정(장소 매칭·장소 전용·넓히기 3경로). 점수 하한 없이 `fillToKindQuota`가 무관한 글을 채우던 문제 해소.
+- 장소를 다룬 블로그가 2개 미만이면 **장소명 단독으로 재검색**(본문에 목적지 이름/별칭이 든 글만 유지, 장소 기준 캐시). 관련도 판정은 첫 토큰(고유명사)도 인정.
+- `isRelevantToPlace`를 영상에도 동일 적용(`description` 포함) — 이전엔 블로그만 걸러냈다. 예시 페이지 캐시 키 v11.
+
+**실시간 조사 + AI 자가검토 (8204f8b, 64322b0)**
+- 근본 원인: verifiedPlaces가 없는 대다수 목적지에서 AI가 실존 확인 없이 장소를 기억으로 창작. 생성 **전**에 실존 업체/명소를 조사해 `webResearch`로 프롬프트에 공급한다. 조사는 Gemini를 거치지 않아 쿼터 소모 없음.
+  - 국내: 네이버 지역검색(`src/lib/real/naver-local.ts`, 블로그 검색과 같은 자격증명).
+  - 해외: Google Places API(New) Text Search(`src/lib/real/google-places.ts`). 맛집 + 목적 기반 쿼리 2개. **유료**(월 5,000건 무료 후 1,000건당 $32 — 사용자 승인 하 도입, 키 필요).
+- 생성 **후** AI 자가검토 패스 1회로 동선 재점검 → Gemini 호출은 최대 2회(생성+검토) 순차. `/plan/new`·`/plan/result/[id]`에 `maxDuration=120`.
+- 조사·검토 실패는 모두 삼켜 기존 재시도/폴백 경로에 영향 없음.
+- 알려진 위험: 해외 조사 호출량이 곧 과금 — 쿼터 모니터링 없음(미결).
 
 ---
 

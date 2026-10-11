@@ -14,6 +14,6 @@ jobs:
     steps:
       - name: Call prefetch endpoint
         run: |
-          curl -sf --max-time 120 \
+          curl -sf --max-time 300 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ secrets.PREFETCH_URL }}"
