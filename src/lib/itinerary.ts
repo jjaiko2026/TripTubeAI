@@ -13,6 +13,7 @@ import { mockSearchBlog, mockSearchYoutube } from "@/lib/mock/sources";
 import { fetchYoutubeVideos } from "@/lib/real/youtube";
 import { fetchNaverBlogs } from "@/lib/real/naver-blog";
 import { fetchNaverLocalPlaces } from "@/lib/real/naver-local";
+import { fetchGooglePlacesCandidates } from "@/lib/real/google-places";
 import { resolveGeocodeProvider } from "@/lib/geo/geocode-provider";
 import { reorderDayItemsByGeography } from "@/lib/geo-order";
 import { getCachedSources, saveCachedSources, normalizeQuery } from "@/db/source-cache";
@@ -416,45 +417,50 @@ async function generateItineraryWithAI(
   return output.days;
 }
 
+/** "맛집" + food가 아닌 목적 중 첫 번째로 검색어 2개를 만든다 — food만 골랐다면(겹치는 목적이
+ *  없음) 범용 "가볼만한곳"으로 채운다. 국내(네이버)/해외(구글) 조사가 공유한다. */
+function researchQueries(request: TripRequest, destinationName: string): string[] {
+  const nonFoodPurpose = request.purposes.find((p) => p.id !== "food");
+  const secondQueryLabel = nonFoodPurpose ? PURPOSE_LABELS[nonFoodPurpose.id].split("·")[0] : "가볼만한곳";
+  return Array.from(new Set([`${destinationName} 맛집`, `${destinationName} ${secondQueryLabel}`]));
+}
+
+function formatResearchLines(places: { title: string; category?: string; address?: string }[]): string | undefined {
+  if (places.length === 0) return undefined;
+  return places
+    .map((p) => `- ${p.title}${p.category ? ` (${p.category})` : ""}${p.address ? ` — ${p.address}` : ""}`)
+    .join("\n");
+}
+
 /**
  * generateItineraryWithAI가 일정을 창작하기 전에, 실시간 검색으로 그 목적지의 실존하는
  * 업체/장소명을 조사합니다. verifiedPlaces/regionalKnowledge가 비어 있는 대다수 목적지에서
  * AI가 기억만으로 장소명을 지어내는 것을 막기 위한 보조 자료입니다.
  *
- * Gemini의 구글 검색 그라운딩(tools)이 아니라 네이버 지역 검색 API를 씁니다 — 이유는:
- * (1) 그라운딩 tools는 구조화 출력(Output.object)과 한 호출에 같이 쓰는 게 표준
- * generateContent 경로에서 안전하다는 근거가 없고, (2) 이 조사만으로도 AI 생성/자가검토용
- * Gemini 호출 쿼터(무료 티어 기준 모델당 하루 20회로 확인됨)를 추가로 깎아먹는다 — 일정 하나당
- * Gemini 호출이 3배로 늘어 기존에 이미 알려진 "쿼터 부족 → 폴백 일정" 문제를 악화시킨다.
- * 네이버 지역 검색은 블로그 검색과 같은 자격증명·쿼터 풀을 쓰고 이 코드베이스는 거기 상한을
- * 두지 않으므로(§real/naver-blog.ts와 동일 방침), AI 호출 예산과 완전히 분리된다.
+ * Gemini의 구글 검색 그라운딩(tools)이 아니라 네이버 지역 검색(국내)/Places API(해외)를
+ * 직접 씁니다 — 이유는: (1) 그라운딩 tools는 구조화 출력(Output.object)과 한 호출에 같이
+ * 쓰는 게 표준 generateContent 경로에서 안전하다는 근거가 없고, (2) 이 조사까지 Gemini를
+ * 거치면 AI 생성/자가검토용 Gemini 호출 쿼터(무료 티어 기준 모델당 하루 20회로 확인됨)를
+ * 추가로 깎아먹어 일정 하나당 Gemini 호출이 3배로 늘어난다 — 기존에 이미 알려진 "쿼터 부족 →
+ * 폴백 일정" 문제를 악화시킨다. 네이버 지역 검색은 블로그 검색과 같은 자격증명·쿼터 풀을 쓰고
+ * 이 코드베이스는 거기 상한을 두지 않지만(§real/naver-blog.ts와 동일 방침), Places API
+ * Text Search는 월 5,000건 무료 이후 1,000건당 $32가 과금되는 유료 호출이다(사용자 승인 하에
+ * 도입) — 어느 쪽이든 AI 호출 예산과는 완전히 분리된다.
  *
- * 네이버 지역 검색은 국내 업체 DB라 해외 목적지는 다루지 않는다 — request.region이 "해외"면
- * 호출 자체를 생략하고 undefined를 반환해(오늘과 동일하게) AI의 일반 지식에 맡긴다.
  * 어떤 이유로든 실패해도 undefined를 반환해 예외를 절대 밖으로 던지지 않는다.
  */
 async function researchDestinationViaWeb(
   request: TripRequest,
   destination: DestinationProfile
 ): Promise<string | undefined> {
-  if (request.region === "해외") return undefined;
-
   try {
-    // 1번 쿼리가 이미 "맛집"을 다루므로, 2번 쿼리는 food가 아닌 목적 중 첫 번째로 — 사용자가
-    // food 목적만 골랐다면(겹치는 목적이 없음) 범용 "가볼만한곳"으로 채운다.
-    const nonFoodPurpose = request.purposes.find((p) => p.id !== "food");
-    const secondQueryLabel = nonFoodPurpose ? PURPOSE_LABELS[nonFoodPurpose.id].split("·")[0] : "가볼만한곳";
-    const queries = Array.from(
-      new Set([`${destination.name} 맛집`, `${destination.name} ${secondQueryLabel}`])
-    );
+    const queries = researchQueries(request, destination.name);
+    if (request.region === "해외") {
+      const results = await Promise.all(queries.map((q) => fetchGooglePlacesCandidates(q, 5)));
+      return formatResearchLines(results.flat().filter((p) => p.title));
+    }
     const results = await Promise.all(queries.map((q) => fetchNaverLocalPlaces(q, 5)));
-    const places = results.flat().filter((p) => p.title);
-    if (places.length === 0) return undefined;
-
-    const lines = places.map((p) =>
-      `- ${p.title}${p.category ? ` (${p.category})` : ""}${p.address ? ` — ${p.address}` : ""}`
-    );
-    return lines.join("\n");
+    return formatResearchLines(results.flat().filter((p) => p.title));
   } catch (error) {
     console.error("web research for itinerary failed, proceeding without it:", error);
     return undefined;
